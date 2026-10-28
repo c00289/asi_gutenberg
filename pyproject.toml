@@ -1,0 +1,56 @@
+[project]
+name = "asi_gutenberg"
+version = "0.2.1"
+description = "Pure-Python document generator: specs, reports, plans, procedures and minutes to Markdown, PDF and Word from one factory-built model"
+readme = "README.md"
+authors = [
+    { name = "Roy Mendoza", email = "c00289@contractor.asirobots.com" }
+]
+requires-python = ">=3.13"
+keywords = ["documentation", "markdown", "pdf", "docx", "diagrams", "reportlab", "python-docx", "functional-safety", "requirements"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Typing :: Typed",
+]
+dependencies = [
+    "asi-escher",
+    "python-docx>=1.2.0",
+    "reportlab>=4.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# asi_escher's LayoutWarning must be captured by render_diagrams, never escape
+filterwarnings = ["error::asi_escher.layout.LayoutWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.uv]
+# OneDrive refuses hardlinks from the uv cache; copy instead so `uv sync` just works here
+link-mode = "copy"
+
+[tool.uv.sources]
+asi-escher = { path = "../asi_escher", editable = true }
