@@ -1,0 +1,33 @@
+# Continuous integration: every push to main, every v* tag and every pull request runs ruff and pytest on
+# windows-latest, where Tk is available, so the GUI tests run too. A release is green by this, not by anyone's word.
+# asi_gutenberg depends on asi_escher as editable path sources (../<sibling>), so each sibling is checked
+# out beside it under the workspace and every step runs inside asi_gutenberg/.
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: asi_gutenberg
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: asi_gutenberg
+      - uses: actions/checkout@v4
+        with:
+          repository: c00289/asi_escher
+          path: asi_escher
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - run: uv sync
+      - run: uv run ruff check src tests
+      - run: uv run pytest -q
