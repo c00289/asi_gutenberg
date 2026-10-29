@@ -258,3 +258,10 @@ def test_marked_fills_are_highlighted_in_every_output(tmp_path):
     plain_build = build(d, str(tmp_path), "unmarked", params={"vehicle_type": "Wheel Loader", "fusa_engineer": "x"},
                         mark_params=False)
     assert "==" not in pathlib.Path(plain_build["md"]).read_text(encoding="utf-8")
+
+
+def test_the_output_stem_ignores_the_marks(tmp_path):
+    d = Document("{{ vehicle_type }} Safety Plan (SP)", "plan")
+    d.h1("Scope")
+    out = build(d, str(tmp_path), params={"vehicle_type": "Wheel Loader"})
+    assert os.path.basename(out["md"]) == "wheel_loader_safety_plan__sp_.md"

@@ -6,6 +6,12 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-29
+
+### Fixed
+- The output file stem came from the marked title (`__wheel_loader___safety_plan__sp_`); it comes from
+  the plain title (`wheel_loader_safety_plan__sp_`).
+
 ## [0.4.0] - 2026-10-29
 
 The owner, 2026-10-29: "when replacing parameters in the Word document the parametrised value, whether

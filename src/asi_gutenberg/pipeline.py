@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from .diagrams import render_diagrams
+from .inline import plain
 from .layout import LayoutOptions, layout
 from .markdown import from_markdown, to_markdown
 from .model import Document
@@ -39,7 +40,7 @@ def build(d: Document, out_dir: str, name: str | None = None,
     """
     if params is not None:
         d = fill(d, params, strict=strict_params, mark=mark_params)
-    name = name or "".join(c if c.isalnum() else "_" for c in d.title.lower())
+    name = name or "".join(c if c.isalnum() else "_" for c in plain(d.title).lower())  # marks are not a file name
     os.makedirs(out_dir, exist_ok=True)
     opts = opts or LayoutOptions()
     layout(d, opts)
