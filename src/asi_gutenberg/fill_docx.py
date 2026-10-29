@@ -34,6 +34,15 @@ first row with the short forms in the verbatim header's run formatting, repeatin
 the two parts keep the same column widths with nothing but a 1pt empty paragraph between them. The Word
 file is saved with the split and the PDF printed from it. Without Word (or without ``pdf=True``) the file
 keeps the verbatim repeating header and the result says so in ``issues``.
+
+Links (0.9.0; the owner, 2026-10-29: "could we turn the name of the safety deliverable into a clickable URL
+and highlight it blue instead of green so it pops?"). The source writes an inline link as the rendered
+outputs already read it, ``[Safety Plan]({{ row_1_url }})``; once the parameters are filled, a link segment
+becomes a ``w:hyperlink`` (an external relationship, the run inside it carrying the paragraph's run
+properties plus the ``Hyperlink`` character style, added to the document when the template lacks it, Word's
+blue, a single underline and the theme's pale blue ``link_bg`` shading); a mark never applies inside a link,
+blue, not green. A link whose url is empty or still holds a ``{{ placeholder }}`` collapses to its plain
+text: no link, no mark, the cell as the template had it.
 """
 
 from __future__ import annotations
@@ -56,6 +65,10 @@ from .params import fill, unfilled
 from .theme import THEME
 
 _MARK = re.compile(r"==(.+?)==")
+_LINK = re.compile(r"\[([^\]]+)\]\(([^)]*)\)")  # an inline link, as inline.py reads it, the url filled or not
+_INLINE = re.compile(r"\[(?P<ltext>[^\]]+)\]\((?P<href>[^)]*)\)|==(?P<mark>.+?)==")
+HYPERLINK_COLOUR = "0563C1"  # Word's own Hyperlink blue
+_RT_HYPERLINK = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
 _FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
 _XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 _NBSP = " "
@@ -121,12 +134,14 @@ def fill_docx(template: str, source: Document | str, values: dict[str, Any], out
         raise ValueError(f"the Word body walk found {len(units)} units, the importer {len(want)}")
     replaced = 0
     for unit, (_kind, new) in zip(units, want, strict=True):
-        if _rewrite(unit, new, mark, qn):
+        if _rewrite(unit, new, mark, qn, word.part):
             replaced += 1
     if title_unit is not None and filled.title:
-        if _rewrite(title_unit, filled.title, mark, qn):
+        if _rewrite(title_unit, filled.title, mark, qn, word.part):
             replaced += 1
         word.core_properties.title = _plain(filled.title)
+    if any(True for _ in word.element.body.iter(qn("w:hyperlink"))):
+        _ensure_hyperlink_style(word, qn)
     if repeat_header:
         for table in word.tables:
             if table.rows:
@@ -239,32 +254,49 @@ def _walk(word, qn) -> tuple[_Unit | None, list[_Unit]]:
 
 
 # -- the rewrite -----------------------------------------------------------------------------------
+Segment = tuple[str, bool, str | None]  # (text, marked, href): a run of the rewritten text
+
+
 def _plain(marked: str) -> str:
-    return _MARK.sub(lambda m: m.group(1), marked)
+    """The text without its marks and links: what the Word file reads back."""
+    return _MARK.sub(lambda m: m.group(1), _LINK.sub(lambda m: m.group(1), marked))
 
 
-def _segments(marked: str) -> list[tuple[str, bool]]:
-    """A filled text as ``(text, marked)`` pieces in order, a ``==value==`` the marked ones."""
-    out: list[tuple[str, bool]] = []
+def _href(url: str) -> str | None:
+    """A link's target once filled; None when it is empty or still a ``{{ placeholder }}`` (the link
+    collapses to its text)."""
+    url = _plain(url).strip()
+    return url if url and "{{" not in url else None
+
+
+def _segments(marked: str) -> list[Segment]:
+    """A filled text as ``(text, marked, href)`` pieces in order: a ``==value==`` the marked ones, a
+    ``[text](url)`` the linked ones (never marked, blue not green; one whose url is unfilled is its text)."""
+    out: list[Segment] = []
     pos = 0
-    for m in _MARK.finditer(marked):
+    for m in _INLINE.finditer(marked):
         if m.start() > pos:
-            out.append((marked[pos:m.start()], False))
-        out.append((m.group(1), True))
+            out.append((marked[pos:m.start()], False, None))
+        if m.group("mark") is not None:
+            out.append((m.group("mark"), True, None))
+        else:
+            href = _href(m.group("href"))
+            inner = _segments(m.group("ltext"))
+            out.extend((text, marked_, None) if href is None else (text, False, href) for text, marked_, _ in inner)
         pos = m.end()
     if pos < len(marked):
-        out.append((marked[pos:], False))
+        out.append((marked[pos:], False, None))
     return out
 
 
-def _cut(segments: list[tuple[str, bool]], start: int, end: int) -> list[tuple[str, bool]]:
+def _cut(segments: list[Segment], start: int, end: int) -> list[Segment]:
     """The segments between plain-text offsets ``start`` and ``end``."""
-    out: list[tuple[str, bool]] = []
+    out: list[Segment] = []
     pos = 0
-    for text, marked in segments:
+    for text, marked, href in segments:
         lo, hi = max(start, pos), min(end, pos + len(text))
         if hi > lo:
-            out.append((text[lo - pos:hi - pos], marked))
+            out.append((text[lo - pos:hi - pos], marked, href))
         pos += len(text)
     return out
 
@@ -292,26 +324,27 @@ def _pieces(p_el, qn) -> list[tuple[Any, str]]:
     return out
 
 
-def _rewrite(unit: _Unit, new: Any, mark: bool, qn) -> bool:
+def _rewrite(unit: _Unit, new: Any, mark: bool, qn, part=None) -> bool:
     """Bring the unit's text to ``new`` (a marked string; for a table, its rows of cell strings) with the
-    least change; True when anything was written."""
+    least change; True when anything was written. ``part`` is the document part a link's relationship
+    goes into (0.9.0); a text that reads the same but gains a link is a change."""
     if unit.cells is not None:
         changed = False
         for cell, text in zip(unit.cells, (c for row in new for c in row), strict=True):
-            if cell is not None and _rewrite(cell, text, mark, qn):
+            if cell is not None and _rewrite(cell, text, mark, qn, part):
                 changed = True
         return changed
     old = clean("\n".join("".join(t for _, t in _pieces(p, qn)) for p in unit.paragraphs))
     plain = _plain(new)
-    if old == plain:
-        return False
     segments = _segments(new)
+    if old == plain and not any(href for _, _, href in segments):
+        return False
     if len(unit.paragraphs) == 1 and "\n" not in plain:
-        _edit_paragraph(unit.paragraphs[0], segments, mark, qn)
+        _edit_paragraph(unit.paragraphs[0], segments, mark, qn, part)
         return True
     # one paragraph per line, the cell's own paragraphs first, the last cloned for the extra lines
     lines = plain.split("\n")
-    line_segments: list[list[tuple[str, bool]]] = []
+    line_segments: list[list[Segment]] = []
     pos = 0
     for line in lines:
         line_segments.append(_cut(segments, pos, pos + len(line)))
@@ -328,19 +361,22 @@ def _rewrite(unit: _Unit, new: Any, mark: bool, qn) -> bool:
     for p_el in paragraphs[len(lines):]:
         p_el.getparent().remove(p_el)
     for p_el, segs in zip(paragraphs[:len(lines)], line_segments, strict=True):
-        _edit_paragraph(p_el, segs, mark, qn)
+        _edit_paragraph(p_el, segs, mark, qn, part)
     return True
 
 
-def _edit_paragraph(p_el, segments: list[tuple[str, bool]], mark: bool, qn) -> None:
+def _edit_paragraph(p_el, segments: list[Segment], mark: bool, qn, part=None) -> None:
     """Rewrite one paragraph's text to ``segments``: the common prefix and suffix stay in their runs, the
-    span between goes into new runs after the run where it starts, which lends them its formatting."""
+    span between goes into new runs after the run where it starts, which lends them its formatting. A
+    linked segment goes into a ``w:hyperlink`` (0.9.0), so the prefix and suffix never reach into one:
+    text that reads the same but becomes a link is rewritten."""
     from docx.oxml import OxmlElement
 
     pieces = _pieces(p_el, qn)
     raw = "".join(t for _, t in pieces)
-    new = "".join(t for t, _ in segments)
-    if raw == new:
+    new = "".join(t for t, _, _ in segments)
+    linked = [href for _, _, href in segments if href]
+    if raw == new and not linked:
         return
     a = 0
     while a < min(len(raw), len(new)) and raw[a] == new[a]:
@@ -348,6 +384,14 @@ def _edit_paragraph(p_el, segments: list[tuple[str, bool]], mark: bool, qn) -> N
     b = 0
     while b < min(len(raw), len(new)) - a and raw[-1 - b] == new[-1 - b]:
         b += 1
+    if linked:  # the first link's start and the last link's end bound the prefix and the suffix
+        offset, first, last = 0, len(new), 0
+        for text, _, href in segments:
+            if href:
+                first, last = min(first, offset), max(last, offset + len(text))
+            offset += len(text)
+        a = min(a, first)
+        b = min(b, len(new) - last)
     end = len(raw) - b
     middle = _cut(segments, a, len(new) - b)
 
@@ -415,12 +459,14 @@ def _edit_paragraph(p_el, segments: list[tuple[str, bool]], mark: bool, qn) -> N
         before = None
     # the new text, run by run, then the tail
     new_runs = []
-    for text, marked in middle:
+    for text, marked, href in middle:
         run = OxmlElement("w:r")
         rpr = source.find(qn("w:rPr"))
         if rpr is not None:
             run.append(copy.deepcopy(rpr))
-        if marked and mark:
+        if href:
+            _link_run(run, qn)
+        elif marked and mark:
             _shade_run(run, qn)
         for i, line in enumerate(text.split("\n")):
             if i:
@@ -430,6 +476,14 @@ def _edit_paragraph(p_el, segments: list[tuple[str, bool]], mark: bool, qn) -> N
                 t.text = line
                 t.set(_XML_SPACE, "preserve")
                 run.append(t)
+        if href:
+            if part is None:
+                raise ValueError("a link needs the document part its relationship goes into")
+            link = OxmlElement("w:hyperlink")
+            link.set(qn("r:id"), part.relate_to(href, _RT_HYPERLINK, is_external=True))
+            link.set(qn("w:history"), "1")
+            link.append(run)
+            run = link
         new_runs.append(run)
     if tail_children:
         tail = OxmlElement("w:r")
@@ -464,6 +518,52 @@ def _shade_run(run, qn) -> None:
     shd.set(qn("w:color"), "auto")
     shd.set(qn("w:fill"), THEME["mark_bg"].lstrip("#"))
     rpr.append(shd)
+
+
+def _link_run(run, qn) -> None:
+    """The run inside a hyperlink: the ``Hyperlink`` character style, Word's blue, a single underline and
+    the theme's pale blue shading; any mark shading, highlight, colour or underline the source run carried
+    goes, so a link is blue, never green (0.9.0). The properties keep the schema's order."""
+    from docx.oxml import OxmlElement
+
+    rpr = run.find(qn("w:rPr"))
+    if rpr is None:
+        rpr = OxmlElement("w:rPr")
+        run.insert(0, rpr)
+    for tag in ("w:rStyle", "w:color", "w:highlight", "w:u", "w:shd"):
+        for old in rpr.findall(qn(tag)):
+            rpr.remove(old)
+    style = OxmlElement("w:rStyle")
+    style.set(qn("w:val"), "Hyperlink")
+    rpr.insert(0, style)
+    colour = rpr.get_or_add_color()
+    colour.set(qn("w:val"), HYPERLINK_COLOUR)
+    u = rpr.get_or_add_u()
+    u.set(qn("w:val"), "single")
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), THEME["link_bg"].lstrip("#"))
+    rpr.insert_element_before(shd, "w:fitText", "w:vertAlign", "w:rtl", "w:cs", "w:em", "w:lang",
+                              "w:eastAsianLayout", "w:specVanish", "w:oMath")
+
+
+def _ensure_hyperlink_style(word, qn) -> bool:
+    """Word's ``Hyperlink`` character style (blue, underlined), added when the template has none, so the
+    links the fill writes read as Word's own; True when it was added."""
+    from docx.enum.style import WD_STYLE_TYPE
+    from docx.shared import RGBColor
+
+    styles = word.styles
+    for style in styles.element.findall(qn("w:style")):
+        name = style.find(qn("w:name"))
+        if style.get(qn("w:styleId")) == "Hyperlink" or (name is not None and name.get(qn("w:val")) == "Hyperlink"):
+            return False
+    style = styles.add_style("Hyperlink", WD_STYLE_TYPE.CHARACTER)
+    style.font.color.rgb = RGBColor.from_string(HYPERLINK_COLOUR)
+    style.font.underline = True
+    style.element.set(qn("w:styleId"), "Hyperlink")
+    return True
 
 
 def _show_content(run, qn) -> None:

@@ -365,3 +365,48 @@ def test_from_docx_reads_the_section_breaks(tmp_path):
     assert kinds == [("heading", None), ("paragraph", None), ("section", "landscape"), ("heading", None),
                      ("table", None), ("section", "portrait"), ("heading", None)]
     assert not any("orientation" in i for i in result.issues)
+
+
+def test_a_link_renders_blue_in_every_output(tmp_path):
+    """0.9.0, the owner: "turn the name of the safety deliverable into a clickable URL and highlight it blue
+    instead of green". ``[Safety Plan]({{ row_1_url }})`` in the source: the fill writes the url into the
+    link's target unmarked, the PDF markup and the Word rendering paint the link blue over the theme's
+    ``link_bg`` and never green; an unfilled or empty url is plain text in every output."""
+    import docx
+    from docx.oxml.ns import qn
+
+    from asi_gutenberg.inline import parse, plain, to_pdf_markup
+    from asi_gutenberg.theme import THEME
+
+    assert [(s.text, s.href) for s in parse("[Safety Plan]({{ row_1_url }})")] == [("Safety Plan", None)]
+    assert [(s.text, s.href) for s in parse("[Safety Plan]()")] == [("Safety Plan", None)]
+    assert [(s.text, s.href, s.mark) for s in parse("See [==Plan==](https://x/) now")] == [
+        ("See ", None, False), ("Plan", "https://x/", True), (" now", None, False)]
+    assert plain("[Safety Plan]({{ row_1_url }})") == "Safety Plan"
+    markup = to_pdf_markup("[Safety Plan](https://www.microsoft.com/)", link_bg=THEME["link_bg"])
+    assert f'backColor="{THEME["link_bg"]}"' in markup and 'href="https://www.microsoft.com/"' in markup
+    assert THEME["mark_bg"] not in to_pdf_markup("[==Safety Plan==](https://x/)")  # a mark never inside a link
+
+    d = Document("{{ vehicle_type }} Plan", "plan")
+    d.table(["Deliverable", "Status"], [["[Safety Plan]({{ row_1_url }})", "{{ row_1_status }}"],
+                                        ["[HARA]({{ row_2_url }})", "{{ row_2_status }}"]])
+    filled = fill(d, {"vehicle_type": "Wheel Loader", "row_1_url": "https://www.microsoft.com/",
+                      "row_1_status": "Done", "row_2_status": "Open"}, strict=False)
+    assert filled.blocks[0].rows[0] == ["[Safety Plan](https://www.microsoft.com/)", "==Done=="]  # the url unmarked
+    assert filled.blocks[0].rows[1] == ["[HARA]({{ row_2_url }})", "==Open=="]
+    assert fill(d, {"row_1_url": ""}, strict=False).blocks[0].rows[0][0] == "[Safety Plan]()"
+
+    out = build(d, str(tmp_path), "linked", params={"vehicle_type": "Wheel Loader", "row_1_status": "Done",
+                                                     "row_1_url": "https://www.microsoft.com/"}, strict_params=False)
+    md = pathlib.Path(out["md"]).read_text(encoding="utf-8")
+    assert "| [Safety Plan](https://www.microsoft.com/) | ==Done== |" in md
+    word = docx.Document(out["docx"])
+    [h] = list(word.element.body.iter(qn("w:hyperlink")))
+    assert word.part.rels[h.get(qn("r:id"))].target_ref == "https://www.microsoft.com/"
+    rpr = h.find(qn("w:r") + "/" + qn("w:rPr"))
+    assert rpr.find(qn("w:rStyle")).get(qn("w:val")) == "Hyperlink"
+    assert rpr.find(qn("w:shd")).get(qn("w:fill")) == THEME["link_bg"].lstrip("#")
+    assert rpr.find(qn("w:u")).get(qn("w:val")) == "single"
+    cells = [c.text for t in word.tables for row in t.rows for c in row.cells]
+    assert "Safety Plan" in cells and "HARA" in cells  # the unfilled link is its text
+    assert out["pages"] >= 1

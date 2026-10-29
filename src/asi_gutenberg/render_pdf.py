@@ -184,7 +184,8 @@ class _PdfRenderer:
 
     def _m(self, text: str) -> str:
         th = self.th
-        return to_pdf_markup(text, th["pdf_mono"], th["accent"], th["code_bg"], mark_bg=self.th["mark_bg"])
+        return to_pdf_markup(text, th["pdf_mono"], th["accent"], th["code_bg"], mark_bg=th["mark_bg"],
+                             link_bg=th.get("link_bg", "#CFE2F3"))
 
     # ------------------------------------------------------------- build --
     def build(self, path: str) -> dict:

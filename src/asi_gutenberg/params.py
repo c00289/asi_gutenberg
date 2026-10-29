@@ -20,6 +20,8 @@ from typing import Any
 from .model import Document
 
 PLACEHOLDER = re.compile(r"\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}")
+# a placeholder that is the whole target of an inline link, ``[text]({{ name }})`` (0.9.0)
+LINK_TARGET = re.compile(r"\]\(\s*" + PLACEHOLDER.pattern + r"\s*\)")
 
 
 def parameters(doc: Document) -> list[str]:
@@ -35,7 +37,9 @@ def fill(doc: Document, values: dict[str, Any], *, strict: bool = True, mark: bo
 
     With ``mark`` (the default) a filled value is written as ``==value==``, the inline highlight both
     renderers paint (the theme's ``mark_bg``, a green), so a replacement is easy to tell from the text
-    around it (owner, 2026-10-29); an empty value is left unmarked, there is nothing to see.
+    around it (owner, 2026-10-29); an empty value is left unmarked, there is nothing to see. A placeholder
+    that is the target of an inline link, ``[text]({{ name }})``, is never marked: the value is the URL
+    (0.9.0), and the renderers paint the link blue instead.
 
     With ``strict`` (the default) a placeholder without a value is a ``ValueError`` that names every
     missing one, so a build never silently ships a blank; with ``strict=False`` they stay as they are.
@@ -45,15 +49,21 @@ def fill(doc: Document, values: dict[str, Any], *, strict: bool = True, mark: bo
     if missing and strict:
         raise ValueError("no value for parameter(s): " + ", ".join(missing))
 
+    def value_of(name: str) -> str:
+        v = values[name]
+        return "" if v is None else str(v)
+
     def sub(text: str) -> str:
+        def target(m: re.Match[str]) -> str:
+            return m.group(0) if m.group(1) not in values else f"]({value_of(m.group(1))})"
+
         def one(m: re.Match[str]) -> str:
             name = m.group(1)
             if name not in values:
                 return m.group(0)
-            v = values[name]
-            text = "" if v is None else str(v)
+            text = value_of(name)
             return f"=={text}==" if mark and text else text
-        return PLACEHOLDER.sub(one, text)
+        return PLACEHOLDER.sub(one, LINK_TARGET.sub(target, text))
 
     data = _map_texts(doc.to_dict(), sub)
     out = Document.from_dict(data)

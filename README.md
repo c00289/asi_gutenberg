@@ -213,6 +213,20 @@ filled values mint as the rendered documents do; without it the file is the temp
 prints the PDF through Word itself (Windows with Word installed; the Word process it starts is ended
 afterwards), so the PDF is Word's own print of the filled file, not a rendering.
 
+**A link in a cell.** The owner, 2026-10-29: "could we turn the name of the safety deliverable into a
+clickable URL and highlight it blue instead of green so it pops?" The source writes an inline link the
+way every rendered output already reads it, `[Safety Plan]({{ row_1_url }})`, the url a parameter like
+any other (filled, it is never marked). In the filled Word original the link segment becomes a real
+`w:hyperlink` (an external relationship to the url) whose run carries the paragraph's own run properties
+plus Word's `Hyperlink` character style (added to the document when the template has none), Word's blue
+`#0563C1`, a single underline and the theme's pale blue shading `link_bg` (`#CFE2F3`); a mark never
+applies inside a link, so it is blue, not green, and the PDF Word prints keeps it clickable. A link whose
+url is empty or still holds its `{{ placeholder }}` collapses to its plain text, no link and no mark, so
+the cell is the template's exactly, and the url is listed as unfilled. The Word rendering and the PDF
+rendering paint a link the same way, blue over the pale blue shading. For the QF-17 every plan row's
+Safety Deliverables cell is `[<name>]({{ row_N_url }})`, the row's first work product URL as asi_kletz
+supplies it (`python -m asi_gutenberg fill ... --mark`).
+
 **Verbatim, then abridged.** A wide plan table carries wordy column headings, and repeating them on every
 page costs a third of each (the owner, 2026-10-29: "it would be amazing if the safety plan table headers
 were verbatim in the first page and then abridged in all subsequent, because they are wordy").

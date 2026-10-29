@@ -354,10 +354,15 @@ def test_qf_17_fills_whole(tmp_path):
     statuses = [plan.cell(r, 9).text for r in range(1, len(plan.rows))]
     assert durations[0] == "<row_1_points> points\n<row_1_sprint_end>"
     assert any("<row_48_status>" in s for s in statuses)  # the Status column stacks the Jira key over the status
-    # read back, the file says exactly what the filled source says, cell for cell
-    from asi_gutenberg.fill_docx import _source_units
+    # 0.9.0: the deliverable's name is a link to the row's first work product URL, blue, not green
+    assert _links_of(plan.cell(1, 2)) == [("<row_1_url>", "Safety Plan", "Hyperlink", "0563C1", BLUE)]
+    assert not any(s.get(qn("w:fill")) == GREEN for s in plan.cell(1, 2)._tc.iter(qn("w:shd")))
+    assert len([h for r in range(1, len(plan.rows)) for h in _links_of(plan.cell(r, 2))]) >= 49
+    # read back, the file says exactly what the filled source says (less its marks and links), cell for cell
+    from asi_gutenberg.fill_docx import _plain, _source_units
 
-    want = _source_units(fill(doc, values, mark=False))
+    want = [(kind, _plain(unit) if kind == "text" else [[_plain(c) for c in row] for row in unit])
+            for kind, unit in _source_units(fill(doc, values, mark=False))]
     got = _source_units(from_docx(result.docx, str(tmp_path / "figures")).document)
     assert len(want) == len(got)
     for w, g in zip(want, got, strict=True):
@@ -472,3 +477,114 @@ def test_qf_17_abridges_its_plan_table(tmp_path):
 
     custom = zipfile.ZipFile(result.docx).read("docProps/custom.xml").decode("utf-8")
     assert '<vt:bool>true</vt:bool>' in custom.split('name="_MarkAsFinal"', 1)[1][:80]
+
+
+# -- links (0.9.0) -------------------------------------------------------------------------------------
+BLUE = THEME["link_bg"].lstrip("#")
+
+
+def _links_of(cell) -> list[tuple[str, str, str | None, str | None, str | None]]:
+    """Every hyperlink of a cell: (target, text, character style, colour, shading fill)."""
+    from docx.oxml.ns import qn
+
+    def attr(rpr, tag: str, name: str) -> str | None:
+        el = rpr.find(qn(tag)) if rpr is not None else None
+        return el.get(qn(name)) if el is not None else None
+
+    out = []
+    for h in cell._tc.iter(qn("w:hyperlink")):
+        target = cell.part.rels[h.get(qn("r:id"))].target_ref
+        text = "".join(t.text or "" for t in h.iter(qn("w:t")))
+        rpr = h.find(qn("w:r") + "/" + qn("w:rPr"))
+        out.append((target, text, attr(rpr, "w:rStyle", "w:val"), attr(rpr, "w:color", "w:val"),
+                    attr(rpr, "w:shd", "w:fill")))
+    return out
+
+
+def _linked_source(template: pathlib.Path, tmp_path: pathlib.Path) -> str:
+    """The template's source with the plan table's deliverable a link to the row's url, the role cell
+    carrying a link after other text, and the second deliverable's url left for the fill to miss."""
+    src = from_docx(str(template), str(tmp_path / "figures")).document
+    [_control, plan] = [b for b in src.blocks if b.kind == "table"]
+    plan.rows[0][1] = "[Safety Plan]({{ row_1_url }})"
+    plan.rows[0][2] = "{{ status }}"
+    plan.rows[1][1] = "Role A: [{{ a }}]({{ row_2_url }})\nRole B: {{ b }}"
+    return to_markdown(src)
+
+
+LINK_VALUES = {"row_1_url": "https://www.microsoft.com/", "row_2_url": "https://jama.example.com/items/2554",
+               "status": "Pending", "a": "Ann", "b": "Ben"}
+
+
+def test_a_link_in_a_cell_becomes_a_blue_hyperlink(tmp_path):
+    """0.9.0, the owner: "turn the name of the safety deliverable into a clickable URL and highlight it blue
+    instead of green so it pops". The source writes ``[Safety Plan]({{ row_1_url }})``; filled, the cell is a
+    ``w:hyperlink`` to the url, its run in the Hyperlink style, Word's blue, underlined, shaded the theme's
+    pale blue and never the mark's green; a link inside a cell with other text links its own span only."""
+    import docx
+    from docx.oxml.ns import qn
+
+    template = _template(tmp_path / "widget.docx")
+    source = _linked_source(template, tmp_path)
+    result = fill_docx(str(template), source, LINK_VALUES, str(tmp_path / "linked.docx"), mark=True)
+    assert result.unfilled == [] and result.issues == []
+    out = docx.Document(result.docx)
+    plan = out.tables[1]
+    deliverable = plan.cell(1, 1)
+    assert deliverable.text == "Safety Plan"
+    assert _links_of(deliverable) == [("https://www.microsoft.com/", "Safety Plan", "Hyperlink", "0563C1", BLUE)]
+    [h] = list(deliverable._tc.iter(qn("w:hyperlink")))
+    assert out.part.rels[h.get(qn("r:id"))].is_external
+    u = h.find(qn("w:r") + "/" + qn("w:rPr") + "/" + qn("w:u"))
+    assert u is not None and u.get(qn("w:val")) == "single"
+    assert not any(s.get(qn("w:fill")) == GREEN for s in deliverable._tc.iter(qn("w:shd")))  # blue, not green
+    assert "Hyperlink" in [s.name for s in out.styles]  # the style added: python-docx's default has none
+    # the status cell beside it is still a marked value, green
+    [status] = [r for p in plan.cell(1, 2).paragraphs for r in p.runs if r.text]
+    assert status.text == "Pending" and status._r.find(qn("w:rPr") + "/" + qn("w:shd")).get(qn("w:fill")) == GREEN
+    # a link after other text, in a cell written line by line: the prefix stays plain, the link is its span
+    roles = plan.cell(2, 1)
+    assert _texts(roles) == ["Role A: Ann", "Role B: Ben"]
+    assert _links_of(roles) == [("https://jama.example.com/items/2554", "Ann", "Hyperlink", "0563C1", BLUE)]
+    assert [r.text for r in roles.paragraphs[0].runs] == ["Role A", ": "]  # the template's run, then the new text
+    assert all(r._r.find(qn("w:rPr") + "/" + qn("w:shd")) is None for r in roles.paragraphs[0].runs)
+    # read back through the importer, the file says the plain text of the filled source
+    again = from_docx(result.docx, str(tmp_path / "figures2")).document
+    assert [b for b in again.blocks if b.kind == "table"][1].rows[0][1] == "Safety Plan"
+
+
+def test_a_link_whose_url_is_unfilled_is_its_plain_text(tmp_path):
+    """A link whose url still holds its ``{{ placeholder }}`` (or is empty) collapses to the text: no
+    hyperlink, no mark, the cell exactly as the template had it; the url is listed as unfilled."""
+    import docx
+    from docx.oxml.ns import qn
+
+    template = _template(tmp_path / "widget.docx")
+    source = _linked_source(template, tmp_path)
+    values = {"status": "Pending", "a": "Ann", "b": "Ben"}
+    result = fill_docx(str(template), source, values, str(tmp_path / "unlinked.docx"), mark=True)
+    assert result.unfilled == ["row_1_url", "row_2_url"]
+    out = docx.Document(result.docx)
+    plan = out.tables[1]
+    assert plan.cell(1, 1).text == "Safety Plan" and _links_of(plan.cell(1, 1)) == []
+    assert not any(True for _ in plan.cell(1, 1)._tc.iter(qn("w:shd")))
+    assert _texts(plan.cell(2, 1)) == ["Role A: Ann", "Role B: Ben"] and _links_of(plan.cell(2, 1)) == []
+    [ann] = [r for r in plan.cell(2, 1).paragraphs[0].runs if r.text == "Ann"]
+    assert ann._r.find(qn("w:rPr") + "/" + qn("w:shd")).get(qn("w:fill")) == GREEN  # the value is still marked
+    src = from_markdown(source)
+    [_control, plan_source] = [b for b in src.blocks if b.kind == "table"]
+    plan_source.rows[0][1] = "[Safety Plan]()"
+    empty = fill_docx(str(template), to_markdown(src), {**values, "row_2_url": ""}, str(tmp_path / "empty.docx"),
+                      mark=True)
+    plan = docx.Document(empty.docx).tables[1]
+    assert plan.cell(1, 1).text == "Safety Plan" and _links_of(plan.cell(1, 1)) == []
+    assert _links_of(plan.cell(2, 1)) == []
+
+
+@pytest.mark.skipif(not WINWORD.is_file(), reason="Word is not installed here")
+def test_word_prints_a_linked_cell(tmp_path):
+    template = _template(tmp_path / "widget.docx")
+    result = fill_docx(str(template), _linked_source(template, tmp_path), LINK_VALUES,
+                       str(tmp_path / "linked.docx"), mark=True, pdf=True)
+    assert result.issues == [] and result.pdf == str(tmp_path / "linked.pdf")
+    assert pathlib.Path(result.pdf).stat().st_size > 1000

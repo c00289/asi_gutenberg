@@ -165,20 +165,32 @@ def _bookmark(paragraph, name: str, bid: int):
     paragraph._p.append(end)
 
 
-def _hyperlink(paragraph, url: str, text: str, colour: str, font: str, size: float):
+def _hyperlink(paragraph, url: str, text: str, colour: str, font: str, size: float, bg: str | None = None):
+    """An external hyperlink run: underlined in ``colour``, the ``Hyperlink`` character style, shaded ``bg``
+    (the theme's pale blue, 0.9.0) when given."""
     part = paragraph.part
     r_id = part.relate_to(url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
                           is_external=True)
     h = OxmlElement("w:hyperlink")
     h.set(qn("r:id"), r_id)
+    h.set(qn("w:history"), "1")
     r = OxmlElement("w:r")
     rPr = OxmlElement("w:rPr")
+    style = OxmlElement("w:rStyle")
+    style.set(qn("w:val"), "Hyperlink")
+    rPr.append(style)
     c = OxmlElement("w:color")
     c.set(qn("w:val"), colour.lstrip("#"))
     rPr.append(c)
     u = OxmlElement("w:u")
     u.set(qn("w:val"), "single")
     rPr.append(u)
+    if bg:
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), bg.lstrip("#"))
+        rPr.append(shd)
     r.append(rPr)
     t = OxmlElement("w:t")
     t.set(qn("xml:space"), "preserve")
@@ -277,7 +289,8 @@ class _DocxRenderer:
                 paragraph.add_run().add_break(WD_BREAK.LINE)
                 continue
             if s.href:
-                _hyperlink(paragraph, s.href, s.text, th["accent"], th["docx_font"], size or th["body_pt"])
+                _hyperlink(paragraph, s.href, s.text, th["accent"], th["docx_font"], size or th["body_pt"],
+                           th.get("link_bg"))
                 continue
             r = paragraph.add_run(s.text)
             if s.bold or bold:

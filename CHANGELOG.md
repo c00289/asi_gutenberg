@@ -6,6 +6,39 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-29
+
+The owner, 2026-10-29, on the exported QF-17 Safety Plan: "Could we turn the name of the safety deliverable
+into a clickable URL and highlight it blue instead of green so it pops?"
+
+### Added
+- **Links in the in-place fill** (`fill_docx.py`): the source writes an inline link as the rendered outputs
+  already read it, `[Safety Plan]({{ row_1_url }})`. Once the parameters are filled, `_segments` reads a
+  link segment (`(text, marked, href)` now) and `_edit_paragraph` writes it as a `w:hyperlink` element: an
+  external relationship to the url (`part.relate_to(url, RT.HYPERLINK, is_external=True)`, its `r:id` on
+  the element), the run inside it carrying the paragraph's run properties plus `w:rStyle Hyperlink`, Word's
+  blue `w:color 0563C1`, `w:u single` and the theme's pale blue `w:shd`; the `Hyperlink` character style is
+  added to the document when the template lacks it (python-docx's default has none). A mark never applies
+  inside a link: blue, not green. A link whose url is empty or still holds a `{{ placeholder }}` collapses
+  to its plain text, no link and no mark, the cell as the template had it. Text that reads the same but
+  gains a link is a change: the common prefix and suffix never reach into a link.
+- **`link_bg`** in the theme (`theme.py`): `#CFE2F3`, a pale blue that reads with the blue-black link text.
+  The Word rendering's hyperlink (`render_docx._hyperlink`) takes the `Hyperlink` style and that shading;
+  the PDF markup (`inline.to_pdf_markup(..., link_bg=)`) paints a link over it, never over the mark's green.
+- `params.fill` never marks a placeholder that is the whole target of a link (`LINK_TARGET`): the value is
+  the url. `inline.parse` reads a link whose url is empty or still a placeholder as its text, so the
+  rendered outputs never show the raw syntax or link to `{{ row_1_url }}`.
+
+### Tests
+- `test_a_link_in_a_cell_becomes_a_blue_hyperlink` (the hyperlink element, its relationship target, the
+  style, the colour, the shading, no green on it, the style added, a link after other text in a cell written
+  line by line, the importer reading the plain text back), `test_a_link_whose_url_is_unfilled_is_its_plain_text`
+  (a placeholder url, an empty url), `test_word_prints_a_linked_cell` (Word), `test_a_link_renders_blue_in_
+  every_output` (the inline parse, the fill leaving the url unmarked, the Markdown, the Word rendering's
+  hyperlink with the shading, the PDF markup); `test_qf_17_fills_whole` asserts row 1's deliverable cell is a
+  hyperlink to the `<row_1_url>` value and every plan row has one (asi_standards, same day). 65 tests, 61
+  before.
+
 ## [0.8.0] - 2026-10-29
 
 The owner, 2026-10-29, on the exported QF-17 Safety Plan, whose plan table runs over eighteen landscape
@@ -372,6 +405,7 @@ as those two. The Python API is unchanged by the move.
 - Smoke tests covering the pipeline round trip and the demo catalog.
 
 [Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.8.0...HEAD
+[0.9.0]: https://github.com/c00289/asi_gutenberg/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/c00289/asi_gutenberg/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/c00289/asi_gutenberg/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/c00289/asi_gutenberg/compare/v0.7.0...v0.7.1

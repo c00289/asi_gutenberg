@@ -34,7 +34,7 @@ _TOKEN = re.compile(
     r"(?P<esc>\\[\\`*_\[\]()~<>#|-])"
     r"|(?P<code>`+)(?P<codetext>.+?)(?P=code)"
     r"|(?P<br><br\s*/?>|  \n|\n)"
-    r"|(?P<link>\[(?P<ltext>[^\]]+)\]\((?P<href>[^)\s]+)(?:\s+\"[^\"]*\")?\))"
+    r"|(?P<link>\[(?P<ltext>[^\]]+)\]\((?P<href>[^)\s]*|\{\{[^)]*\}\})(?:\s+\"[^\"]*\")?\))"
     r"|(?P<bi>\*\*\*(?P<bitext>.+?)\*\*\*)"
     r"|(?P<b>\*\*(?P<btext>.+?)\*\*|__(?P<btext2>.+?)__)"
     r"|(?P<i>\*(?P<itext>[^*\n]+?)\*|(?<![\w])_(?P<itext2>[^_\n]+?)_(?![\w]))"
@@ -57,8 +57,9 @@ def parse(text: str, bold=False, italic=False, strike=False, href=None, mark=Fal
             out.append(Span(g["codetext"], bold, italic, True, strike, href, mark=mark))
         elif g["br"]:
             out.append(Span("", br=True))
-        elif g["link"]:
-            out.extend(parse(g["ltext"], bold, italic, strike, g["href"], mark))
+        elif g["link"]:  # a link with no url, or one still a {{ placeholder }}, is its text (0.9.0)
+            target = g["href"] if g["href"] and "{{" not in g["href"] else href
+            out.extend(parse(g["ltext"], bold, italic, strike, target, mark))
         elif g["bi"]:
             out.extend(parse(g["bitext"], True, True, strike, href, mark))
         elif g["b"]:
@@ -89,8 +90,9 @@ def pdf_safe(s: str) -> str:
 
 
 def to_pdf_markup(text: str, mono: str = "Courier", link_colour: str = "#2F6DB5",
-                  code_bg: str = "#F1F4F8", mark_bg: str = "#A0D8A0") -> str:
-    """Inline Markdown -> reportlab Paragraph markup."""
+                  code_bg: str = "#F1F4F8", mark_bg: str = "#A0D8A0", link_bg: str = "#CFE2F3") -> str:
+    """Inline Markdown -> reportlab Paragraph markup. A link is underlined in ``link_colour`` over
+    ``link_bg``; a mark never applies inside one (blue, not green; 0.9.0)."""
     parts = []
     for s in parse(text):
         if s.br:
@@ -99,6 +101,8 @@ def to_pdf_markup(text: str, mono: str = "Courier", link_colour: str = "#2F6DB5"
         t = _xml(pdf_safe(s.text))
         if s.code:
             t = f'<font face="{mono}" backColor="{code_bg}">{t}</font>'
+        elif s.href:
+            t = f'<font backColor="{link_bg}">{t}</font>'
         elif s.mark:
             t = f'<font backColor="{mark_bg}">{t}</font>'
         if s.bold:
