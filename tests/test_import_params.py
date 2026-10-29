@@ -183,3 +183,33 @@ def test_a_wide_table_builds_portrait_and_landscape(tmp_path):
     section = docx.Document(landscape["docx"]).sections[0]
     assert section.orientation == WD_ORIENT.LANDSCAPE and section.page_width > section.page_height
     assert docx.Document(portrait["docx"]).sections[0].orientation == WD_ORIENT.PORTRAIT
+
+
+def test_a_title_in_a_content_control_is_read(tmp_path):
+    """Word binds the Title paragraph to the file's title through a content control (``w:sdt``), which
+    ``Paragraph.text`` skips; the QF-17 title went missing that way (0.3.1)."""
+    import docx
+    from docx.oxml import OxmlElement
+
+    d = docx.Document()
+    d.core_properties.title = "Safety plan (SP) Template"
+    title = d.add_paragraph("", style="Title")
+    sdt = OxmlElement("w:sdt")
+    content = OxmlElement("w:sdtContent")
+    run = OxmlElement("w:r")
+    text = OxmlElement("w:t")
+    text.text = "Safety plan (SP) Template"
+    run.append(text)
+    content.append(run)
+    sdt.append(content)
+    title._p.append(sdt)
+    body = d.add_paragraph("")
+    body._p.append(sdt.__copy__())  # the same control in a body paragraph is a paragraph of text
+    d.add_paragraph("Purpose", style="Heading 1")
+    path = tmp_path / "control.docx"
+    d.save(str(path))
+    assert docx.Document(str(path)).paragraphs[0].text == ""  # python-docx's view, the bug's cause
+    result = from_docx(str(path))
+    assert result.document.title == "Safety plan (SP) Template"
+    assert [b.kind for b in result.document.blocks] == ["paragraph", "heading"]
+    assert result.document.blocks[0].text == "Safety plan (SP) Template"

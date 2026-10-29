@@ -77,6 +77,31 @@ def _date_of(text: str) -> str | None:
     return None
 
 
+def paragraph_text(p, qn) -> str:
+    """Every run of a paragraph, content controls (``w:sdt``), fields and text boxes included; ``Paragraph.text``
+    skips a content control, which is how a Word title bound to the file's title property went missing
+    (0.3.1). A ``mc:Fallback`` subtree repeats a text box for old Word versions, so it is skipped."""
+    fallback = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
+    parts: list[str] = []
+    for node in p._p.iter():
+        tag = node.tag
+        if tag == qn("w:t"):
+            skip = False
+            parent = node.getparent()
+            while parent is not None:
+                if parent.tag == fallback:
+                    skip = True
+                    break
+                parent = parent.getparent()
+            if not skip:
+                parts.append(node.text or "")
+        elif tag == qn("w:br") or tag == qn("w:cr"):
+            parts.append("\n")
+        elif tag == qn("w:tab"):
+            parts.append("\t")
+    return "".join(parts)
+
+
 def _is_fields_table(rows: list[list[str]]) -> bool:
     return bool(rows) and all(len(r) == 2 for r in rows) and all(_LABELISH.match(r[0].split("\n")[0]) for r in rows)
 
@@ -110,15 +135,15 @@ def from_docx(path: str, figures_dir: str | None = None, *, kind: str = "plan",
                 meta["author"] = r[1].split("\n")[0]
 
     # -- first pass: the title and the date stamp -------------------------------------------
-    body_title = ""
+    body_title = clean(src.core_properties.title or "")
     for p in src.paragraphs:
         style = p.style.name if p.style is not None else ""
-        if style == "Title" and clean(p.text):
-            body_title = clean(p.text)
+        if style == "Title" and clean(paragraph_text(p, qn)):
+            body_title = clean(paragraph_text(p, qn))
             break
     for section in src.sections:
         for p in list(section.footer.paragraphs) + list(section.header.paragraphs):
-            found = _date_of(p.text)
+            found = _date_of(paragraph_text(p, qn))
             if found and not meta["date"]:
                 meta["date"] = found
     doc = Document(title or body_title or stem, kind, toc=False, front_matter=False, numbered=False)
@@ -158,7 +183,7 @@ def from_docx(path: str, figures_dir: str | None = None, *, kind: str = "plan",
         if tag == "p":
             p = DocxParagraph(child, src)
             style = p.style.name if p.style is not None else ""
-            text = clean(p.text)
+            text = clean(paragraph_text(p, qn))
             if add_pictures(p):
                 flush_list()
                 continue
@@ -192,7 +217,7 @@ def from_docx(path: str, figures_dir: str | None = None, *, kind: str = "plan",
         elif tag == "tbl":
             flush_list()
             t = DocxTable(child, src)
-            rows = [[clean(c.text) for c in r.cells] for r in t.rows]
+            rows = [[clean("\n".join(paragraph_text(cp, qn) for cp in c.paragraphs)) for c in r.cells] for r in t.rows]
             rows = [r for r in rows if any(r)]
             if not rows:
                 continue

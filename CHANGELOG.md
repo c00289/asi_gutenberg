@@ -6,6 +6,20 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-29
+
+The first parameter of the QF-17 Safety Plan is its first sentence, and the import had not seen it.
+
+### Fixed
+- **A paragraph's text is every run** (`importer.paragraph_text`): content controls (`w:sdt`, how Word
+  binds the Title paragraph to the file's title property), fields and text boxes included, line and
+  tab breaks kept, the `mc:Fallback` copy of a text box skipped; `Paragraph.text` of python-docx skips
+  a content control, which is how "Safety plan (SP) Template" went missing. The title also falls back
+  to the file's title property. Table cells read the same way.
+
+### Tests
+- `test_a_title_in_a_content_control_is_read`.
+
 ## [0.3.0] - 2026-10-29
 
 The owner, 2026-10-29: "bring that document into Gutenberg; we will use Gutenberg to parametrise
