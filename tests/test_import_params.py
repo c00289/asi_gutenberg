@@ -98,7 +98,8 @@ def test_fill_substitutes_everywhere_and_strict_refuses_a_missing_value():
     assert parameters(d) == ["column", "deadline", "number", "owner", "program"]
     with pytest.raises(ValueError, match="no value for parameter\\(s\\): column, deadline"):
         fill(d, {"program": "WA485", "number": 17, "owner": "the FSE"})
-    done = fill(d, {"program": "WA485", "number": 17, "owner": "the FSE", "column": "When", "deadline": None})
+    values = {"program": "WA485", "number": 17, "owner": "the FSE", "column": "When", "deadline": None}
+    done = fill(d, values, mark=False)
     assert done.title == "WA485 Safety Plan" and done.meta.doc_id == "QF-17" and done.meta.author == "the FSE"
     assert done.blocks[0].text == "Scope of WA485" and done.blocks[1].text == "Owner: the FSE."
     assert done.blocks[2].items[0].text == "Item WA485"
@@ -106,7 +107,7 @@ def test_fill_substitutes_everywhere_and_strict_refuses_a_missing_value():
     assert done.blocks[3].caption == "Plan WA485" and done.blocks[4].title == "the FSE"
     assert parameters(d) == ["column", "deadline", "number", "owner", "program"]  # the original is untouched
     assert unfilled(done) == []
-    partial = fill(d, {"program": "WA485"}, strict=False)
+    partial = fill(d, {"program": "WA485"}, strict=False, mark=False)
     assert unfilled(partial) == ["column", "deadline", "number", "owner"]
 
 
@@ -115,11 +116,11 @@ def test_build_with_params_fills_and_reports_leftovers(tmp_path):
     d.h1("Scope")
     d.p("For {{ program }}, owned by {{ owner }}.")
     with pytest.raises(ValueError, match="owner"):
-        build(d, str(tmp_path), "strict", params={"program": "WA485"})
-    out = build(d, str(tmp_path), "loose", params={"program": "WA485"}, strict_params=False)
+        build(d, str(tmp_path), "strict", params={"program": "WA485"}, mark_params=False)
+    out = build(d, str(tmp_path), "loose", params={"program": "WA485"}, strict_params=False, mark_params=False)
     text = pathlib.Path(out["md"]).read_text(encoding="utf-8")
     assert "For WA485, owned by {{ owner }}." in text and "unfilled parameter: owner" in out["issues"]
-    full = build(d, str(tmp_path), "full", params={"program": "WA485", "owner": "the FSE"})
+    full = build(d, str(tmp_path), "full", params={"program": "WA485", "owner": "the FSE"}, mark_params=False)
     assert "{{" not in pathlib.Path(full["md"]).read_text(encoding="utf-8") and full["issues"] == []
 
 
@@ -213,3 +214,47 @@ def test_a_title_in_a_content_control_is_read(tmp_path):
     assert result.document.title == "Safety plan (SP) Template"
     assert [b.kind for b in result.document.blocks] == ["paragraph", "heading"]
     assert result.document.blocks[0].text == "Safety plan (SP) Template"
+
+
+def test_marked_fills_are_highlighted_in_every_output(tmp_path):
+    """Owner, 2026-10-29: a replaced value must stand out, and not in yellow."""
+    import docx
+    from docx.oxml.ns import qn
+
+    from asi_gutenberg.inline import parse, plain, to_pdf_markup
+    from asi_gutenberg.theme import THEME
+
+    spans = parse("Plan for ==Wheel Loader== by **==the FSE==**.")
+    assert [(s.text, s.mark, s.bold) for s in spans] == [
+        ("Plan for ", False, False), ("Wheel Loader", True, False), (" by ", False, False),
+        ("the FSE", True, True), (".", False, False),
+    ]
+    assert plain("==x==") == "x" and THEME["mark_bg"].lower() not in ("#ffff00", "#ffff99")  # not yellow
+    assert '<font backColor="#D6F0E3">Wheel Loader</font>' in to_pdf_markup("==Wheel Loader==")
+
+    d = Document("{{ vehicle_type }} Plan", "plan")
+    d.h1("Scope")
+    d.p("This plan applies to the {{ vehicle_type }} program.")
+    d.table(["Role", "Name"], [["FuSa Engineer", "{{ fusa_engineer }}"]])
+    filled = fill(d, {"vehicle_type": "Wheel Loader", "fusa_engineer": "the FSE"})
+    assert filled.title == "==Wheel Loader== Plan"
+    assert filled.blocks[1].text == "This plan applies to the ==Wheel Loader== program."
+    assert filled.blocks[2].rows == [["FuSa Engineer", "==the FSE=="]]
+    assert fill(d, {"vehicle_type": "Wheel Loader", "fusa_engineer": ""}, mark=False).title == "Wheel Loader Plan"
+    empty = fill(d, {"vehicle_type": "Wheel Loader", "fusa_engineer": ""})
+    assert empty.blocks[2].rows == [["FuSa Engineer", ""]]  # nothing to mark
+
+    out = build(d, str(tmp_path), "marked", params={"vehicle_type": "Wheel Loader", "fusa_engineer": "the FSE"})
+    md = pathlib.Path(out["md"]).read_text(encoding="utf-8")
+    assert "==Wheel Loader==" in md and "| FuSa Engineer | ==the FSE== |" in md and out["issues"] == []
+    word = docx.Document(out["docx"])
+    shaded = [r.text for p in word.paragraphs for r in p.runs if r._element.find(".//" + qn("w:shd")) is not None]
+    cell_shaded = [r.text for t in word.tables for row in t.rows for c in row.cells for p in c.paragraphs
+                   for r in p.runs if r._element.find(".//" + qn("w:shd")) is not None]
+    assert "Wheel Loader" in shaded and "the FSE" in cell_shaded
+    fills = {r._element.find(".//" + qn("w:shd")).get(qn("w:fill")) for p in word.paragraphs for r in p.runs
+             if r._element.find(".//" + qn("w:shd")) is not None}
+    assert fills == {"D6F0E3"}
+    plain_build = build(d, str(tmp_path), "unmarked", params={"vehicle_type": "Wheel Loader", "fusa_engineer": "x"},
+                        mark_params=False)
+    assert "==" not in pathlib.Path(plain_build["md"]).read_text(encoding="utf-8")

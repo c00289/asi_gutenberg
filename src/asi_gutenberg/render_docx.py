@@ -307,6 +307,13 @@ class _DocxRenderer:
                 rPr.append(shd)
             elif size:
                 r.font.size = Pt(size)
+            if s.mark and not s.code:
+                rPr = r._element.get_or_add_rPr()
+                shd = OxmlElement("w:shd")
+                shd.set(qn("w:val"), "clear")
+                shd.set(qn("w:color"), "auto")
+                shd.set(qn("w:fill"), th["mark_bg"].lstrip("#"))
+                rPr.append(shd)
             if colour:
                 r.font.color.rgb = _rgb(colour)
         self.n_par += 1

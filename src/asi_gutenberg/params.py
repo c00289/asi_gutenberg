@@ -30,8 +30,12 @@ def parameters(doc: Document) -> list[str]:
     return sorted(found)
 
 
-def fill(doc: Document, values: dict[str, Any], *, strict: bool = True) -> Document:
+def fill(doc: Document, values: dict[str, Any], *, strict: bool = True, mark: bool = True) -> Document:
     """A copy of ``doc`` with every ``{{ name }}`` replaced by ``str(values[name])``.
+
+    With ``mark`` (the default) a filled value is written as ``==value==``, the inline highlight both
+    renderers paint (the theme's ``mark_bg``, a mint), so a replacement is easy to tell from the text
+    around it (owner, 2026-10-29); an empty value is left unmarked, there is nothing to see.
 
     With ``strict`` (the default) a placeholder without a value is a ``ValueError`` that names every
     missing one, so a build never silently ships a blank; with ``strict=False`` they stay as they are.
@@ -47,7 +51,8 @@ def fill(doc: Document, values: dict[str, Any], *, strict: bool = True) -> Docum
             if name not in values:
                 return m.group(0)
             v = values[name]
-            return "" if v is None else str(v)
+            text = "" if v is None else str(v)
+            return f"=={text}==" if mark and text else text
         return PLACEHOLDER.sub(one, text)
 
     data = _map_texts(doc.to_dict(), sub)

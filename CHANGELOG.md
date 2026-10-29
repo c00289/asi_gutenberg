@@ -6,6 +6,23 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-29
+
+The owner, 2026-10-29: "when replacing parameters in the Word document the parametrised value, whether
+it is the vehicle type or some name, must be highlighted in some way that easily tells us that it is a
+replacement, just not yellow."
+
+### Added
+- **`==mark==`**, an inline highlight (`inline.py`: `Span.mark`, the token, `to_pdf_markup`): both
+  renderers paint it with the theme's new `mark_bg` (`#D6F0E3`, a mint), the PDF as a background colour
+  on the run, Word as run shading; the Markdown carries the marks as plain text.
+- **Marked fills**: `fill(..., mark=True)` (the default) writes every filled value as `==value==` (an empty
+  value stays unmarked); `build(..., mark_params=True)` and the command line's `--no-mark` to switch it off.
+
+### Tests
+- `test_marked_fills_are_highlighted_in_every_output`: the parser, `plain`, the PDF markup, the fill,
+  the Word runs' shading colour in a paragraph and in a table cell, and the unmarked build.
+
 ## [0.3.1] - 2026-10-29
 
 The first parameter of the QF-17 Safety Plan is its first sentence, and the import had not seen it.

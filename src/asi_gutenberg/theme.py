@@ -23,6 +23,7 @@ THEME = {
     "zebra_a": "#FFFFFF",
     "zebra_b": "#F1F4F8",
     "code_bg": "#F1F4F8",
+    "mark_bg": "#D6F0E3",        # ==mark==: a filled parameter stands out; a mint, not a yellow (owner, 2026-10-29)
     "code_ink": "#1F2933",
     "quote_bar": "#B8C2CC",
     "watermark": "#E3E8EE",

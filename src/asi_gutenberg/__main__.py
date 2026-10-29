@@ -51,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     bld.add_argument("--name", default=None, help="the output stem (default: from the title)")
     bld.add_argument("--param", action="append", metavar="NAME=VALUE", help="a parameter value (repeatable)")
     bld.add_argument("--allow-unfilled", action="store_true", help="build even when a placeholder has no value")
+    bld.add_argument("--no-mark", action="store_true", help="do not highlight the filled values")
     bld.add_argument("--landscape", action="store_true",
                      help="lay the pages out landscape (a wide table reads better)")
 
@@ -85,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             values = _parse_params(args.param)
             theme = {"orientation": "landscape"} if args.landscape else None
             result = build(doc, args.out_dir, args.name, theme=theme, params=values,
-                           strict_params=not args.allow_unfilled)
+                           strict_params=not args.allow_unfilled, mark_params=not args.no_mark)
             payload = {"ok": True, "verb": "build", **{k: result[k] for k in ("md", "pdf", "docx", "pages", "issues")}}
     except (ValueError, OSError) as exc:
         print(json.dumps({"ok": False, "verb": args.verb, "error": str(exc)}, indent=2))

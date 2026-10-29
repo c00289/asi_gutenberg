@@ -179,7 +179,9 @@ it is unambiguous. What it cannot keep it says in `issues` (page orientation per
 header and footer text, fonts). The result is a Markdown source that rebuilds to the triplet.
 
 A parameter is `{{ name }}` anywhere text goes: metadata, headings, paragraphs, list items,
-table cells and captions, callouts. `parameters(doc)` lists them; `fill(doc, values)` returns a
+table cells and captions, callouts. A filled value is written as `==value==` and both renderers
+highlight it (the theme's `mark_bg`, a mint), so a replacement is easy to tell from the text around
+it; `--no-mark` switches that off. `parameters(doc)` lists them; `fill(doc, values)` returns a
 filled copy and refuses, naming them, the ones it has no value for; `build(doc, out,
 params=values)` fills first and reports anything left as `unfilled parameter: <name>`.
 
