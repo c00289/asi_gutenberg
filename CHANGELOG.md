@@ -6,6 +6,16 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-29
+
+The owner, 2026-10-29: "bring back the color formatting for parameters and make it a nice green, not neon,
+not forest."
+
+### Changed
+- **The mark colour is a green** (`theme.py` `mark_bg`, `inline.py`): `#A0D8A0`, a leaf green light enough
+  for black text, in the PDF, the Word rendering and the in-place fill alike; it was the mint `#D6F0E3`,
+  which read as no colour at all on the printed page.
+
 ## [0.7.1] - 2026-10-29
 
 Two faults of 0.7.0's fill, found by the family's integration review of the same day; nothing of the API
@@ -312,7 +322,8 @@ as those two. The Python API is unchanged by the move.
 - `py.typed` marker so host type-checkers see the package as typed.
 - Smoke tests covering the pipeline round trip and the demo catalog.
 
-[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/c00289/asi_gutenberg/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/c00289/asi_gutenberg/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/c00289/asi_gutenberg/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/c00289/asi_gutenberg/compare/v0.6.0...v0.6.1

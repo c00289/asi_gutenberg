@@ -89,7 +89,7 @@ def pdf_safe(s: str) -> str:
 
 
 def to_pdf_markup(text: str, mono: str = "Courier", link_colour: str = "#2F6DB5",
-                  code_bg: str = "#F1F4F8", mark_bg: str = "#D6F0E3") -> str:
+                  code_bg: str = "#F1F4F8", mark_bg: str = "#A0D8A0") -> str:
     """Inline Markdown -> reportlab Paragraph markup."""
     parts = []
     for s in parse(text):

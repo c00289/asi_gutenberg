@@ -34,7 +34,7 @@ def fill(doc: Document, values: dict[str, Any], *, strict: bool = True, mark: bo
     """A copy of ``doc`` with every ``{{ name }}`` replaced by ``str(values[name])``.
 
     With ``mark`` (the default) a filled value is written as ``==value==``, the inline highlight both
-    renderers paint (the theme's ``mark_bg``, a mint), so a replacement is easy to tell from the text
+    renderers paint (the theme's ``mark_bg``, a green), so a replacement is easy to tell from the text
     around it (owner, 2026-10-29); an empty value is left unmarked, there is nothing to see.
 
     With ``strict`` (the default) a placeholder without a value is a ``ValueError`` that names every

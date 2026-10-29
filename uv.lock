@@ -25,7 +25,7 @@ dev = [
 
 [[package]]
 name = "asi-gutenberg"
-version = "0.7.1"
+version = "0.7.2"
 source = { editable = "." }
 dependencies = [
     { name = "asi-escher" },
