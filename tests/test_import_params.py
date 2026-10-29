@@ -291,6 +291,19 @@ def test_the_command_line_takes_a_params_file(tmp_path):
     assert refused.returncode == 1 and "a parameters file is a JSON object" in refused.stdout
 
 
+def test_a_bad_param_is_refused_as_json(tmp_path):
+    """Every command prints one JSON object, or ``{"ok": false, "error": ...}`` and exits 1; a ``--param``
+    without ``=`` used to leave by ``SystemExit`` with a bare line on stderr instead (0.6.1)."""
+    source = tmp_path / "doc.md"
+    source.write_text("---\ntitle: Plain\nkind: plan\n---\n# Plain\n\n## Scope\n\nText.\n", encoding="utf-8")
+    refused = subprocess.run([sys.executable, "-m", "asi_gutenberg", "build", str(source), str(tmp_path / "out"),
+                              "--param", "novalue"], capture_output=True, text=True)
+    assert refused.returncode == 1 and refused.stderr == ""
+    payload = json.loads(refused.stdout)
+    assert payload == {"ok": False, "verb": "build", "error": "--param wants name=value, got 'novalue'"}
+    assert not (tmp_path / "out").exists()  # refused before anything was written
+
+
 def test_a_section_block_turns_the_page_and_back(tmp_path):
     """Owner, 2026-10-29: the original is portrait with its plan table on landscape pages; so is the product."""
     import docx

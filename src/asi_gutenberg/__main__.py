@@ -27,7 +27,7 @@ def _parse_params(items: list[str] | None) -> dict[str, str]:
     out: dict[str, str] = {}
     for item in items or ():
         if "=" not in item:
-            raise SystemExit(f"--param wants name=value, got {item!r}")
+            raise ValueError(f"--param wants name=value, got {item!r}")  # reported as JSON, like every other error
         name, value = item.split("=", 1)
         out[name.strip()] = value
     return out
