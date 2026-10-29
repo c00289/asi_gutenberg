@@ -234,7 +234,7 @@ def test_marked_fills_are_highlighted_in_every_output(tmp_path):
         ("the FSE", True, True), (".", False, False),
     ]
     assert plain("==x==") == "x" and THEME["mark_bg"].lower() not in ("#ffff00", "#ffff99")  # not yellow
-    assert '<font backColor="#D6F0E3">Wheel Loader</font>' in to_pdf_markup("==Wheel Loader==")
+    assert f'<font backColor="{THEME["mark_bg"]}">Wheel Loader</font>' in to_pdf_markup("==Wheel Loader==")
 
     d = Document("{{ vehicle_type }} Plan", "plan")
     d.h1("Scope")
@@ -258,7 +258,7 @@ def test_marked_fills_are_highlighted_in_every_output(tmp_path):
     assert "Wheel Loader" in shaded and "the FSE" in cell_shaded
     fills = {r._element.find(".//" + qn("w:shd")).get(qn("w:fill")) for p in word.paragraphs for r in p.runs
              if r._element.find(".//" + qn("w:shd")) is not None}
-    assert fills == {"D6F0E3"}
+    assert fills == {THEME["mark_bg"].lstrip("#")}
     plain_build = build(d, str(tmp_path), "unmarked", params={"vehicle_type": "Wheel Loader", "fusa_engineer": "x"},
                         mark_params=False)
     assert "==" not in pathlib.Path(plain_build["md"]).read_text(encoding="utf-8")

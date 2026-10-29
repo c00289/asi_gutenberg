@@ -11,12 +11,13 @@ import sys
 import pytest
 
 from asi_gutenberg import fill_docx, from_docx, from_markdown, to_markdown
+from asi_gutenberg.theme import THEME
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 QF17 = REPO.parent / "asi_standards" / "qf-17-safety-plan"
 PROGRAM_FILES = pathlib.Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
 WINWORD = PROGRAM_FILES / "Microsoft Office" / "root" / "Office16" / "WINWORD.EXE"
-MINT = "D6F0E3"
+GREEN = THEME["mark_bg"].lstrip("#")  # the mark colour, whatever the theme says it is
 
 
 def _template(path: pathlib.Path) -> pathlib.Path:
@@ -131,12 +132,12 @@ def test_marks_shade_the_values_only(tmp_path):
         shd = run._r.find(qn("w:rPr") + "/" + qn("w:shd")) if run._r.find(qn("w:rPr")) is not None else None
         return shd.get(qn("w:fill")) if shd is not None else None
 
-    shaded = [r.text for r in note.runs if fill_of(r) == MINT]
+    shaded = [r.text for r in note.runs if fill_of(r) == GREEN]
     assert shaded == ["Alpha"] and fill_of(note.runs[0]) is None
     plan = out.tables[1]
-    assert [r.text for p in plan.cell(2, 1).paragraphs for r in p.runs if fill_of(r) == MINT] == ["Ann", "Ben", "Cy"]
+    assert [r.text for p in plan.cell(2, 1).paragraphs for r in p.runs if fill_of(r) == GREEN] == ["Ann", "Ben", "Cy"]
     plain = fill_docx(str(template), _source(template, tmp_path), VALUES, str(tmp_path / "plain.docx"))
-    assert not any(fill_of(r) == MINT for p in docx.Document(plain.docx).paragraphs for r in p.runs)
+    assert not any(fill_of(r) == GREEN for p in docx.Document(plain.docx).paragraphs for r in p.runs)
 
 
 def test_unfilled_placeholders_stay_or_refuse(tmp_path):
@@ -286,7 +287,8 @@ def test_qf_17_fills_whole(tmp_path):
     assert plan.rows[0]._tr.find(".//" + qn("w:tblHeader")) is not None
     durations = [plan.cell(r, 8).text for r in range(1, len(plan.rows))]
     statuses = [plan.cell(r, 9).text for r in range(1, len(plan.rows))]
-    assert durations[0] == "<row_1_points> points\n<row_1_sprint_end>" and "<row_48_status>" in statuses
+    assert durations[0] == "<row_1_points> points\n<row_1_sprint_end>"
+    assert any("<row_48_status>" in s for s in statuses)  # the Status column stacks the Jira key over the status
     # read back, the file says exactly what the filled source says, cell for cell
     from asi_gutenberg.fill_docx import _source_units
 
