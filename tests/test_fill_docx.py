@@ -162,6 +162,65 @@ def test_nothing_to_change_changes_nothing(tmp_path):
     assert before == after
 
 
+def test_a_cloned_line_keeps_the_runs_properties(tmp_path):
+    """0.7.1: a cell written line by line clones its last paragraph for the extra lines; the clone's runs are
+    emptied, not dropped, so the text written there carries their properties (bold, size, font) as the first
+    line's does, and an empty paragraph with no run takes its paragraph mark's. Before, both went into a bare
+    run and took the paragraph style's look: the extra role lines of the QF-17 came out in the body font."""
+    import docx
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    d = docx.Document()
+    d.add_paragraph("Roles", style="Title")
+    t = d.add_table(rows=2, cols=2)
+    t.cell(0, 0).text, t.cell(0, 1).text = "Role", "Who"
+    run = t.cell(1, 0).paragraphs[0].add_run("Role A: ____")
+    run.bold, run.font.size, run.font.name = True, Pt(7), "Arial"
+    blank = t.cell(1, 1).paragraphs[0]  # no run at all; the paragraph mark says bold
+    mark = blank._p.get_or_add_pPr()
+    rpr = mark.makeelement(qn("w:rPr"), {})
+    rpr.append(rpr.makeelement(qn("w:b"), {}))
+    mark.append(rpr)
+    template = tmp_path / "roles.docx"
+    d.save(str(template))
+    src = from_docx(str(template), str(tmp_path / "figures")).document
+    [table] = [b for b in src.blocks if b.kind == "table"]
+    table.rows[0][0] = "Role A: {{ a }}" + chr(10) + "Role B: {{ b }}" + chr(10) + "Role C: {{ c }}"
+    table.rows[0][1] = "{{ who }}"
+    result = fill_docx(str(template), to_markdown(src), {"a": "Ann", "b": "Ben", "c": "Cy", "who": "Ann"},
+                       str(tmp_path / "filled.docx"))
+    out = docx.Document(result.docx).tables[0]
+    assert _texts(out.cell(1, 0)) == ["Role A: Ann", "Role B: Ben", "Role C: Cy"]
+    for paragraph in out.cell(1, 0).paragraphs:
+        for r in paragraph.runs:
+            if r.text:
+                assert (r.bold, r.font.size, r.font.name) == (True, Pt(7), "Arial"), paragraph.text
+    [who] = [r for r in out.cell(1, 1).paragraphs[0].runs if r.text]
+    assert who.text == "Ann" and who.bold
+
+
+def test_a_failed_print_leaves_the_pdf_that_was_there(tmp_path, monkeypatch):
+    """0.7.1: Word prints to a working name and the target changes hands only once the print is there, so a
+    print that fails (no Word, a COM error) leaves the PDF that was at the target, which asi_kletz counts on:
+    its export writes Gutenberg's rendering first and keeps it when Word cannot print. Before, the target was
+    removed before Word was asked, and a failed print left no PDF at all."""
+    import subprocess
+
+    template = _template(tmp_path / "widget.docx")
+    rendered = tmp_path / "printed.pdf"
+    rendered.write_bytes(b"%PDF-1.4 the rendering of the source")
+
+    def no_word(*args, **kwargs):
+        raise OSError("powershell is not here")
+
+    monkeypatch.setattr(subprocess, "run", no_word)  # what fill_docx.py calls, by module attribute
+    result = fill_docx(str(template), _source(template, tmp_path), VALUES, str(tmp_path / "printed.docx"), pdf=True)
+    assert result.pdf is None and result.issues == ["pdf through Word failed: powershell is not here"]
+    assert rendered.read_bytes() == b"%PDF-1.4 the rendering of the source"
+    assert not (tmp_path / "printed.printing.pdf").exists()
+
+
 def test_a_source_out_of_line_with_the_original_is_refused(tmp_path):
     template = _template(tmp_path / "widget.docx")
     src = from_markdown(_source(template, tmp_path))

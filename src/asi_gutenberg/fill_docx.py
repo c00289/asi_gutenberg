@@ -367,9 +367,19 @@ def _edit_paragraph(p_el, segments: list[tuple[str, bool]], mark: bool, qn) -> N
         source, before = first_touched, first_touched
     elif pieces:  # an append at the very end
         source, before = pieces[-1][0].getparent(), None
-    else:  # an empty paragraph
-        source = OxmlElement("w:r")
-        p_el.append(source)
+    else:  # an empty paragraph: its own last run (a cloned line keeps its runs, emptied, so their properties
+        # carry to the text written there), else a new run with the paragraph mark's properties, as Word
+        # gives text typed into an empty paragraph
+        runs = p_el.findall(qn("w:r"))
+        if runs:
+            source = runs[-1]
+        else:
+            source = OxmlElement("w:r")
+            ppr = p_el.find(qn("w:pPr"))
+            mark_rpr = ppr.find(qn("w:rPr")) if ppr is not None else None
+            if mark_rpr is not None:
+                source.append(copy.deepcopy(mark_rpr))
+            p_el.append(source)
         before = None
     # the new text, run by run, then the tail
     new_runs = []
@@ -454,11 +464,14 @@ def _repeat_header(tr, qn) -> None:
 # -- the PDF, through Word -------------------------------------------------------------------------
 def pdf_with_word(docx_path: str, pdf_path: str, timeout: float = 180) -> str | None:
     """Print ``docx_path`` to ``pdf_path`` with Word (COM automation through PowerShell, Windows only);
-    None when it did, else the reason as one line."""
+    None when it did, else the reason as one line, and ``pdf_path`` as it was (0.7.1)."""
     if os.name != "nt":
         return "pdf through Word needs Windows with Word installed"
-    if os.path.isfile(pdf_path):
-        os.remove(pdf_path)
+    # Word prints to a working name beside the target, which takes the target's place only once the print
+    # is there: a failed print leaves whatever ``pdf_path`` already was (a rendering of the source, say)
+    printing = os.path.splitext(os.path.abspath(pdf_path))[0] + ".printing.pdf"
+    if os.path.isfile(printing):
+        os.remove(printing)
     # the export is the work; Word sometimes drops the COM link right after it (RPC_E_DISCONNECTED on
     # Close or Quit), which is not a failed print, so those two are tried, never trusted, and the Word
     # process this call started (never one the person has open) is ended if Quit did not reach it
@@ -467,7 +480,7 @@ def pdf_with_word(docx_path: str, pdf_path: str, timeout: float = 180) -> str | 
         "$before = @(Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object Id); "
         "$w = New-Object -ComObject Word.Application; $w.Visible = $false; "
         f"try {{ $d = $w.Documents.Open('{_ps(docx_path)}', $false, $true); "
-        f"$d.ExportAsFixedFormat('{_ps(pdf_path)}', {WD_EXPORT_PDF}) }} "
+        f"$d.ExportAsFixedFormat('{_ps(printing)}', {WD_EXPORT_PDF}) }} "
         "finally { try { $d.Close(0) } catch {}; try { $w.Quit() } catch {}; Start-Sleep -Milliseconds 500; "
         "Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id } "
         "| Stop-Process -Force -ErrorAction SilentlyContinue }"
@@ -477,9 +490,10 @@ def pdf_with_word(docx_path: str, pdf_path: str, timeout: float = 180) -> str | 
                              capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"pdf through Word failed: {exc}"
-    if not os.path.isfile(pdf_path):
+    if not os.path.isfile(printing):
         detail = (run.stderr or run.stdout or "").strip().splitlines()
         return "pdf through Word failed: " + (detail[0] if detail else f"exit {run.returncode}")
+    os.replace(printing, pdf_path)
     return None
 
 

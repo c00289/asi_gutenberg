@@ -6,6 +6,28 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-29
+
+Two faults of 0.7.0's fill, found by the family's integration review of the same day; nothing of the API
+changed. `uv.lock` takes asi_escher 0.1.3.
+
+### Fixed
+- **A failed Word print removed the PDF that was there** (`fill_docx.py:pdf_with_word`): the target was
+  removed before Word was asked, so when Word could not print (no Word on the machine, a COM failure) the
+  caller was left with no PDF and an issue, and asi_kletz's export, which writes Gutenberg's rendering first
+  and promises to keep it when Word cannot print, reported a PDF that no longer existed (its CI runner has no
+  Word). Word now prints to `<stem>.printing.pdf` beside the target, and the print takes the target's place
+  only once it is there; a failed print leaves the target as it was.
+- **The extra lines of a cell took the paragraph style's look** (`fill_docx.py:_edit_paragraph`): a cell
+  written line by line clones its last paragraph for the lines beyond its own, and the clone's runs are
+  emptied, not dropped; the text written there went into a bare new run, so the second and later role lines
+  of the QF-17 came out in the body font while the first line kept its run's bold and size. The text now
+  goes after the paragraph's own last run and takes its properties; an empty paragraph with no run at all
+  takes its paragraph mark's run properties, as Word gives text typed there.
+
+### Tests
+- `test_a_cloned_line_keeps_the_runs_properties`, `test_a_failed_print_leaves_the_pdf_that_was_there`.
+
 ## [0.7.0] - 2026-10-29
 
 The owner, 2026-10-29, on the exported QF-17: "can we make it exactly like the template? I still want all
@@ -290,7 +312,8 @@ as those two. The Python API is unchanged by the move.
 - `py.typed` marker so host type-checkers see the package as typed.
 - Smoke tests covering the pipeline round trip and the demo catalog.
 
-[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/c00289/asi_gutenberg/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/c00289/asi_gutenberg/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/c00289/asi_gutenberg/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/c00289/asi_gutenberg/compare/v0.5.0...v0.6.0
