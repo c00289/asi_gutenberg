@@ -40,6 +40,8 @@ from .inline import pdf_safe, plain, to_pdf_markup
 from .model import Document
 from .theme import CALLOUTS, FIGURE_PLACEHOLDER, REQUIREMENT, STATUS_COLOURS, THEME, page_size_pt
 
+MIN_COL_PT = 40.0  # the narrowest a table column gets before the whole table goes equal-width
+
 
 def render_pdf(doc: Document, path: str, theme: dict | None = None, base_dir: str = ".") -> dict:
     """Write ``doc`` to ``path``.  Returns ``{"pages": n}``."""
@@ -438,7 +440,24 @@ class _PdfRenderer:
             w = min(longest, 48) * 0.6 + avg * 0.4
             weights.append(max(w, 5.0))
         total = sum(weights)
-        return [self.text_w * w / total for w in weights]
+        widths = [self.text_w * w / total for w in weights]
+        # a wide table (a 10-column safety plan on a portrait page) must not starve a column: every
+        # column keeps at least MIN_COL_PT, the rest shrink in proportion; past the point where even
+        # that does not fit, the columns are equal and the renderer wraps every cell
+        floor = min(MIN_COL_PT, self.text_w / ncol)
+        for _ in range(ncol):
+            short = [i for i, w in enumerate(widths) if w < floor]
+            if not short:
+                break
+            fixed = len(short) * floor
+            rest = [i for i in range(ncol) if i not in short]
+            rest_total = sum(widths[i] for i in rest) or 1.0
+            for i in short:
+                widths[i] = floor
+            for i in rest:
+                widths[i] = max(floor, (self.text_w - fixed) * widths[i] / rest_total)
+        scale = self.text_w / sum(widths)
+        return [w * scale for w in widths]
 
     def _b_callout(self, b):
         th, s = self.th, self.styles

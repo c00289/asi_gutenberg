@@ -6,6 +6,41 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-29
+
+The owner, 2026-10-29: "bring that document into Gutenberg; we will use Gutenberg to parametrise
+the document; move the doc into Gutenberg and preserve it along with its checksum."
+
+### Added
+- **`from_docx`** (`importer.py`): a Word file into the model, in body order: the title, headings
+  as sections (numbered when Word numbered them), paragraphs, consecutive list paragraphs as one
+  list, every table (a two-column table of labels as a `Field` / `Value` table; line breaks inside
+  a cell kept), inline pictures as figures written to `figures/` beside the source, `Document ID`
+  and `Document owner` rows as `doc_id` and `author`, an unambiguous footer date stamp as `date`;
+  NBSP and the Symbol-font bullet cleaned. `Imported` carries the document, the figure files and
+  the `issues` for what is not kept (mixed page orientations, header or footer text).
+- **Parameters** (`params.py`): `{{ name }}` placeholders anywhere text goes; `parameters`, `fill`
+  (a copy, strict by default), `unfilled`; `build(..., params=, strict_params=)` fills first and
+  reports leftovers as `unfilled parameter: <name>`. Plain text in the Markdown, so it round-trips.
+- **`python -m asi_gutenberg`** with `import`, `params` and `build --param name=value [--landscape]`.
+- **Landscape pages**: `THEME["orientation"]` (`portrait` | `landscape`), honoured by `page_size_pt`, both
+  renderers and the Word section; a wide table reads better that way.
+
+### Fixed
+- A ten-column table on a portrait page gave one column a negative width and the PDF failed
+  (`_col_widths`): every column now keeps a floor (`MIN_COL_PT`, 40 pt) and the others shrink in
+  proportion; past the point where even that fits, the columns are equal and the cells wrap.
+- **asi_standards**, a private sibling repo, holds the parametrised standards (the owner's decision:
+  this repo stays public and never holds a controlled document): one folder per document, the Word
+  original preserved under `source/` with `SHA256SUMS`, the imported Markdown source beside it. The
+  first is the QF-17 Safety Plan; a test checks its checksum and its import when that checkout is
+  beside this one and skips otherwise.
+
+### Tests
+- `tests/test_import_params.py`: the importer on a Word file built in the test (shape, cleaning,
+  the picture, the date), the Markdown round trip and build, `fill` everywhere and strict,
+  `build` with parameters, the command line, and the QF-17 source.
+
 ## [0.2.1] - 2026-10-28
 
 Broken-windows sweep: no change to the Python API or the generated

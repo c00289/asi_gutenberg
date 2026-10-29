@@ -1,6 +1,6 @@
 [project]
 name = "asi_gutenberg"
-version = "0.2.1"
+version = "0.3.0"
 description = "Pure-Python document generator: specs, reports, plans, procedures and minutes to Markdown, PDF and Word from one factory-built model"
 readme = "README.md"
 authors = [

@@ -167,6 +167,34 @@ The step is also a plain function: `render_diagrams(d, out_dir,
 figures_dir="figures", theme=None, mermaid=False)` after `layout(d)` and
 before `to_markdown(d)`.
 
+## Importing a Word document, and parameters
+
+Since 0.3.0 a controlled document that exists only as a Word file can be brought in and
+parametrised. `from_docx` reads the `.docx` into the model, faithfully: the title, every
+`Heading n` as a section (numbered when Word numbered them), paragraphs, consecutive list
+paragraphs as one list, every table (a two-column table of labels becomes a `Field` / `Value`
+table), inline pictures as figures written beside the source, the `Document ID` and
+`Document owner` rows of a front table as `doc_id` and `author`, and a footer date stamp when
+it is unambiguous. What it cannot keep it says in `issues` (page orientation per section,
+header and footer text, fonts). The result is a Markdown source that rebuilds to the triplet.
+
+A parameter is `{{ name }}` anywhere text goes: metadata, headings, paragraphs, list items,
+table cells and captions, callouts. `parameters(doc)` lists them; `fill(doc, values)` returns a
+filled copy and refuses, naming them, the ones it has no value for; `build(doc, out,
+params=values)` fills first and reports anything left as `unfilled parameter: <name>`.
+
+```bash
+python -m asi_gutenberg import "QF-17 Safety Plan.docx" ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
+python -m asi_gutenberg params ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
+python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --param program=WA485 --landscape
+```
+
+The parametrised standards themselves live in **asi_standards**, a private sibling repo, never
+here: one folder per document, the original Word file preserved byte for byte under `source/`
+with its SHA-256 in `SHA256SUMS`, and the imported Markdown source beside it. The first is the
+owner's QF-17 Safety Plan. The test suite checks that checkout when it is beside this repo and
+skips it otherwise, so this public repo holds the machinery and none of the documents.
+
 ## Demos
 
 `demos/catalog.py` holds fifteen builders, listed in `DEMOS` in this order

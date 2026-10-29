@@ -13,6 +13,7 @@ the Markdown.  asi_escher (and matplotlib with it) is imported only when a
 diagram is validated or rendered, never by ``import asi_gutenberg``.
 """
 from .diagrams import render_diagrams
+from .importer import Imported, from_docx
 from .layout import LayoutOptions, layout
 from .markdown import from_markdown, to_markdown
 from .model import (
@@ -35,11 +36,13 @@ from .model import (
     Table,
     Toc,
 )
+from .params import fill, parameters, unfilled
 from .pipeline import build
 from .render_docx import render_docx
 from .render_pdf import render_pdf
 
-__all__ = ["Document", "Heading", "Paragraph", "ListBlock", "ListItem", "Table", "Code",
+__all__ = ["from_docx", "Imported", "parameters", "fill", "unfilled",
+           "Document", "Heading", "Paragraph", "ListBlock", "ListItem", "Table", "Code",
            "Callout", "Requirement", "Figure", "DiagramBlock", "Quote", "Rule", "PageBreak", "Toc",
            "Raw", "Revision", "DocMeta", "layout", "LayoutOptions", "to_markdown", "from_markdown",
            "render_diagrams", "render_pdf", "render_docx", "build"]

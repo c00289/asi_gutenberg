@@ -11,6 +11,7 @@ from __future__ import annotations
 THEME = {
     # paper
     "page": "letter",            # letter | a4
+    "orientation": "portrait",   # portrait | landscape (0.3.0): a wide table wants landscape
     "margin_in": 1.0,            # inches, all sides
     # colour
     "ink": "#1F2933",
@@ -72,7 +73,8 @@ STATUS_COLOURS = {
 
 
 def page_size_pt(theme: dict) -> tuple[float, float]:
-    """(width, height) in points for the theme's paper size."""
-    if theme.get("page", "letter").lower() == "a4":
-        return 595.2756, 841.8898
-    return 612.0, 792.0
+    """(width, height) in points for the theme's paper size and orientation."""
+    w, h = (595.2756, 841.8898) if theme.get("page", "letter").lower() == "a4" else (612.0, 792.0)
+    if str(theme.get("orientation", "portrait")).lower() == "landscape":
+        return h, w
+    return w, h

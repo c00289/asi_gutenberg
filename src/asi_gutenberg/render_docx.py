@@ -215,7 +215,7 @@ class _DocxRenderer:
         th, w = self.th, self.w
         sec = w.sections[0]
         W, H = page_size_pt(th)
-        sec.orientation = WD_ORIENT.PORTRAIT
+        sec.orientation = WD_ORIENT.LANDSCAPE if W > H else WD_ORIENT.PORTRAIT
         sec.page_width = Pt(W)
         sec.page_height = Pt(H)
         for side in ("left_margin", "right_margin", "top_margin", "bottom_margin"):
