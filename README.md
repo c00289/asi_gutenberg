@@ -194,6 +194,7 @@ python -m asi_gutenberg params ../asi_standards/qf-17-safety-plan/qf-17-safety-p
 python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --param program=WA485 --landscape
 python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --params-file values.json --landscape
 python -m asi_gutenberg fill ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out/qf-17-safety-plan.docx --params-file values.json --pdf
+python -m asi_gutenberg fill ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out/qf-17-safety-plan.docx --params-file values.json --pdf --abridge-headers headings.json
 ```
 
 ### The template exactly: filling the Word original in place
@@ -211,6 +212,28 @@ row repeats at the top of every page it spans (`repeat_header`, on by default). 
 filled values mint as the rendered documents do; without it the file is the template exactly. `--pdf`
 prints the PDF through Word itself (Windows with Word installed; the Word process it starts is ended
 afterwards), so the PDF is Word's own print of the filled file, not a rendering.
+
+**Verbatim, then abridged.** A wide plan table carries wordy column headings, and repeating them on every
+page costs a third of each (the owner, 2026-10-29: "it would be amazing if the safety plan table headers
+were verbatim in the first page and then abridged in all subsequent, because they are wordy").
+`fill_docx(..., abridged_headers={verbatim: short})` and `fill --abridge-headers headings.json` (a JSON
+object, verbatim heading to short form) do that: a table whose first row is wholly in the mapping (every
+cell with text has a short form; headings are compared with their whitespace normalised, so a heading
+that wraps over lines is written as one line) shows its verbatim header on its first page, once, and the
+short forms at the top of every later page. A table only partly in the mapping is refused naming the
+headings without a short form (a typo, not a table to skip); so is a mapping no table's first row is in.
+Word cannot repeat a different header on the later pages of one table, and the row where page one ends is
+known only once Word has laid the document out, so this is a Word pass in the same session that prints
+the PDF (`--pdf`, Windows with Word): Word reports the page of every row, the table is split after the
+last row of its first page, the first part keeps the verbatim header with its repeat turned off, the
+second gets a new first row with the short forms in the verbatim header's own formatting and the repeat
+turned on, both parts keep the same column widths with nothing but a 1pt empty paragraph between them,
+and the Word file is saved with the split before the PDF is printed from it. A table that ends on its
+first page is left alone. The result's `abridged` lists the tables split (by their first heading) and
+`pages` is Word's page count; without Word, or without `--pdf`, the file keeps the verbatim header
+repeating and `issues` says "abridged headers need Word". For the QF-17 the mapping is its ten headings
+(`PDP Phases` to `PDP`, `Safety Lifecycle Phase` to `Lifecycle`, and so on); the plan table's first page
+keeps the verbatim header and the document goes from 19 pages to 15.
 
 The parametrised standards themselves live in **asi_standards**, a private sibling repo, never
 here: one folder per document, the original Word file preserved byte for byte under `source/`

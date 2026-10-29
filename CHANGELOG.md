@@ -6,6 +6,55 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
+The owner, 2026-10-29, on the exported QF-17 Safety Plan, whose plan table runs over eighteen landscape
+pages under a ten-column header that repeats on every page: "it would be amazing if the safety plan table
+headers were verbatim in the first page and then abridged in all subsequent, because they are wordy."
+
+### Added
+- **Abridged headers**: `fill_docx(..., abridged_headers={verbatim: short})` and `fill --abridge-headers
+  headings.json` (`fill_docx.py`, `__main__.py`). A table whose first row is wholly in the mapping (every
+  cell with text has a short form; headings compared whitespace-normalised) shows its verbatim header on
+  its first page, once, and the short forms at the top of every later page. Word cannot repeat a different
+  header on the later pages of one table, and the row where page one ends is known only once Word has laid
+  the document out, so the feature is a Word pass in the same PowerShell/COM session that prints the PDF
+  (`word_session`): Word reports the page of every row (`Range.Information(wdActiveEndPageNumber)`,
+  bisected), the table is split after the last row of its first page, the first part keeps the verbatim
+  header with `HeadingFormat` off, the second gets a new first row copying the verbatim header cells'
+  content, formatting and shading with the short forms as text and `HeadingFormat` on, the second part
+  takes the first's column widths, the paragraph Word puts between the parts is shrunk to 1pt with a page
+  break before it, and the Word file is saved with the split before the PDF is printed. A table that ends
+  on its first page is left alone. `Filled` gains `abridged` (the tables split, by first heading) and
+  `pages` (Word's page count); the `fill` command prints both. A mapping that is not `{str: str}` of
+  non-empty strings, a table only partly in it (the headings without a short form are named) or a mapping
+  no table's first row is in are `ValueError`s before anything is written. Without Word, or without
+  `pdf=True`, the file keeps the verbatim repeating header and `issues` carries "abridged headers need
+  Word". Every failure inside Word is an issue, never an exception, as the print's are.
+- What the owner's real QF-17 taught the pass (`fill_docx.py`): Word refuses `Table.Split` and
+  `Rows.Item` on a table with vertically merged cells (the Split Table command on a cell of the row and
+  `Range.Cells` serve instead; a merge cut by the split leaves an empty cell at the top of the second part,
+  as the page break showed it); a file marked as final, or saved read-only recommended, opens read-only
+  whatever `Documents.Open` is asked (the mark is lifted for the pass and put back before the save; the
+  recommendation is dropped by the fill for the pass and put back by Word before the save); a split part
+  is laid out afresh, so the second takes the first's column widths; Word may leave its `~$` owner file
+  beside the output when it is ended after the export (removed when it was not there before). On the
+  QF-17 the plan table's first page holds the header and three rows, and the document goes from 19 pages
+  to 15.
+
+### Changed
+- `pdf_with_word` is a thin wrapper over `word_session` with the same signature and promise (None when
+  printed, else the reason as one line, the target as it was). An issue names Word's own message:
+  PowerShell's CLIXML wrapping of its errors is unwrapped (it used to read `#< CLIXML`).
+- `uv.lock` takes asi_escher 0.2.0 (the sibling moved on; nothing here uses what changed).
+
+### Tests
+- `test_abridged_headers_are_checked_and_need_word` (no Word: the mapping checked, the pass skipped with
+  the issue, the file unchanged), `test_word_abridges_the_headers_after_page_one` (Word: a synthetic
+  landscape original with a ten-column, 80-row table, split and read back with python-docx, the PDF
+  printed), `test_qf_17_abridges_its_plan_table` (Word and asi_standards: the owner's QF-17, its ten
+  headings read from the imported source). 61 tests, 58 before.
+
 ## [0.7.2] - 2026-10-29
 
 The owner, 2026-10-29: "bring back the color formatting for parameters and make it a nice green, not neon,
@@ -322,7 +371,8 @@ as those two. The Python API is unchanged by the move.
 - `py.typed` marker so host type-checkers see the package as typed.
 - Smoke tests covering the pipeline round trip and the demo catalog.
 
-[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/c00289/asi_gutenberg/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/c00289/asi_gutenberg/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/c00289/asi_gutenberg/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/c00289/asi_gutenberg/compare/v0.6.1...v0.7.0

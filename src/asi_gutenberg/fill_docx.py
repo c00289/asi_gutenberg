@@ -21,11 +21,27 @@ before a change or the run after it keep their own. A cell written line by line 
 gets one paragraph per line, the cell's own paragraphs reused and the last cloned for extra lines, so the
 cell keeps its paragraph formatting too. With ``mark=True`` a filled value gets the theme's mint shading on
 its own run, as the rendered documents paint it.
+
+Abridged headers (0.8.0; the owner, 2026-10-29, on the QF-17 plan table, ten wordy columns over eighteen
+landscape pages: "it would be amazing if the safety plan table headers were verbatim in the first page and
+then abridged in all subsequent, because they are wordy"). Word cannot repeat a different header on the
+later pages of one table, and the row where page one ends is known only once Word has laid the document
+out, so ``abridged_headers`` (verbatim heading -> short form) is a Word pass in the same session that
+prints the PDF: for each table whose first row is wholly in the mapping, Word reports the page of every
+row; a table that ends on its first page is left alone; else it is split after the last row of its first
+page, the first part keeps the verbatim header (shown once, not repeating), the second part gets a new
+first row with the short forms in the verbatim header's run formatting, repeating on every later page, and
+the two parts keep the same column widths with nothing but a 1pt empty paragraph between them. The Word
+file is saved with the split and the PDF printed from it. Without Word (or without ``pdf=True``) the file
+keeps the verbatim repeating header and the result says so in ``issues``.
 """
 
 from __future__ import annotations
 
+import base64
 import copy
+import html
+import json
 import os
 import re
 import subprocess
@@ -45,17 +61,22 @@ _XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 _NBSP = " "
 _SYMBOL_BULLET = ""
 WD_EXPORT_PDF = 17  # Word's WdExportFormat.wdExportFormatPDF
+ABRIDGE_NEEDS_WORD = "abridged headers need Word (pdf=True on Windows with Word installed)"
 
 
 @dataclass
 class Filled:
-    """What :func:`fill_docx` wrote: the Word file, the PDF when Word printed one, how many units changed."""
+    """What :func:`fill_docx` wrote: the Word file, the PDF when Word printed one, how many units changed;
+    ``abridged`` names (by their first heading) the tables split for abridged headers and ``pages`` is
+    Word's page count, both known only when Word ran (0.8.0)."""
 
     docx: str
     pdf: str | None = None
     replaced: int = 0
     unfilled: list[str] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
+    abridged: list[str] = field(default_factory=list)
+    pages: int | None = None
 
 
 @dataclass
@@ -69,17 +90,23 @@ class _Unit:
 
 
 def fill_docx(template: str, source: Document | str, values: dict[str, Any], out_path: str, *,
-              strict: bool = False, mark: bool = False, repeat_header: bool = True, pdf: bool = False) -> Filled:
+              strict: bool = False, mark: bool = False, repeat_header: bool = True, pdf: bool = False,
+              abridged_headers: dict[str, str] | None = None) -> Filled:
     """Write ``out_path``: ``template`` with the text of ``source`` (a Markdown string or the parsed
     :class:`Document`), its ``{{ name }}`` placeholders filled from ``values``.
 
     ``strict`` refuses a placeholder without a value (else it stays, listed in ``unfilled``); ``mark``
     shades every filled value; ``repeat_header`` makes each table's first row repeat on every page;
-    ``pdf`` prints ``<out_path stem>.pdf`` through Word (an issue, not an error, when Word cannot).
+    ``pdf`` prints ``<out_path stem>.pdf`` through Word (an issue, not an error, when Word cannot);
+    ``abridged_headers`` maps a table's verbatim column headings (whitespace-normalised) to short forms:
+    a table whose first row is wholly in the mapping shows the verbatim header on its first page and the
+    short forms on every later page (a Word pass with the print: it needs ``pdf=True`` and Word, else an
+    issue; a bad mapping, or one no table's first row is wholly in, is a ``ValueError``).
     """
     import docx
     from docx.oxml.ns import qn
 
+    mapping = _mapping(abridged_headers)
     doc = from_markdown(source) if isinstance(source, str) else source
     filled = fill(doc, values, strict=strict, mark=True)
     left = unfilled(filled)
@@ -106,15 +133,20 @@ def fill_docx(template: str, source: Document | str, values: dict[str, Any], out
                 _repeat_header(table.rows[0]._tr, qn)
     out_path = os.path.abspath(out_path)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    plan = _abridge_plan(word, mapping, qn) if mapping is not None else []
+    recommended = False
+    if plan and pdf:  # Word opens a file "read-only recommended" read-only whatever it is asked; the pass
+        recommended = _lift_read_only_recommended(word, qn)  # needs to write, and the session puts it back
     word.save(out_path)
     result = Filled(out_path, replaced=replaced, unfilled=left)
     if pdf:
         target = os.path.splitext(out_path)[0] + ".pdf"
-        issue = pdf_with_word(out_path, target)
-        if issue:
-            result.issues.append(issue)
-        else:
-            result.pdf = target
+        done = word_session(out_path, target, plan, read_only_recommended=recommended)
+        result.issues.extend(done.issues)
+        result.pdf = target if done.printed else None
+        result.abridged, result.pages = done.abridged, done.pages
+    elif plan:
+        result.issues.append(ABRIDGE_NEEDS_WORD)
     return result
 
 
@@ -461,40 +493,301 @@ def _repeat_header(tr, qn) -> None:
         trpr.append(OxmlElement("w:tblHeader"))
 
 
-# -- the PDF, through Word -------------------------------------------------------------------------
+# -- abridged headers: which tables, and the short forms -----------------------------------------------
+def _heading(text: str) -> str:
+    """A column heading as the mapping names it: NBSP to space, every run of whitespace (line breaks
+    included) to one space, stripped."""
+    return " ".join(text.replace(_NBSP, " ").split())
+
+
+def _mapping(abridged_headers: dict[str, str] | None) -> dict[str, str] | None:
+    """The mapping with its headings normalised; a ValueError when it is not ``{verbatim: short}`` of
+    non-empty strings."""
+    if abridged_headers is None:
+        return None
+    if not isinstance(abridged_headers, dict) or not abridged_headers:
+        raise ValueError("abridged_headers: a non-empty mapping of verbatim heading -> short form")
+    out: dict[str, str] = {}
+    for key, value in abridged_headers.items():
+        if not isinstance(key, str) or not isinstance(value, str) or not _heading(key) or not _heading(value):
+            raise ValueError(f"abridged_headers: {key!r}: {value!r} is not a verbatim heading and its short form")
+        out[_heading(key)] = _heading(value)
+    return out
+
+
+def _abridge_plan(word, mapping: dict[str, str], qn) -> list[dict[str, Any]]:
+    """The tables whose first row is wholly in the mapping (every cell with text has a short form; an empty
+    cell stays empty), each as Word sees it: its 1-based index among the top-level tables, its first
+    heading, and the short forms cell by cell. A table only partly in the mapping is a ValueError naming
+    the headings without a short form (a typo in the mapping, not a table to skip); no table at all, too."""
+    from docx.text.paragraph import Paragraph as DocxParagraph
+
+    plan: list[dict[str, Any]] = []
+    partial: list[str] = []
+    index = 0
+    for tbl in word.element.body.iter(qn("w:tbl")):
+        if any(a.tag == qn("w:tbl") for a in tbl.iterancestors()):
+            continue  # a nested table: not one of Word's Document.Tables
+        index += 1
+        rows = tbl.findall(qn("w:tr"))
+        if len(rows) < 2:
+            continue
+        headings = []
+        for tc in rows[0].findall(qn("w:tc")):
+            paragraphs = [DocxParagraph(cp, word) for cp in tc.findall(qn("w:p"))]
+            headings.append(_heading(clean("\n".join(paragraph_text(cp, qn) for cp in paragraphs))))
+        missing = [h for h in headings if h and h not in mapping]
+        if len(missing) == len([h for h in headings if h]):
+            continue  # none of its headings is in the mapping: not a table to abridge
+        if missing:
+            partial.append(f"table {index} ({headings[0] or '?'}): " + ", ".join(repr(h) for h in missing))
+            continue
+        plan.append({"index": index, "first": headings[0], "short": [mapping[h] if h else "" for h in headings]})
+    if partial:
+        raise ValueError("abridged_headers: headings without a short form: " + "; ".join(partial))
+    if not plan:
+        raise ValueError("abridged_headers: no table's first row is in the mapping")
+    return plan
+
+
+def _lift_read_only_recommended(word, qn) -> bool:
+    """Drop a ``w:writeProtection w:recommended`` setting; True when there was one."""
+    settings = word.settings.element
+    wp = settings.find(qn("w:writeProtection"))
+    if wp is None or wp.get(qn("w:recommended")) not in ("1", "true", "on"):
+        return False
+    settings.remove(wp)
+    return True
+
+
+# -- the Word session: the abridge pass and the PDF ------------------------------------------------------
+@dataclass
+class WordSession:
+    """What one Word session did: whether the PDF was printed, the tables split (by first heading), Word's
+    page count, and the issues (never exceptions) in words."""
+
+    printed: bool = False
+    abridged: list[str] = field(default_factory=list)
+    pages: int | None = None
+    issues: list[str] = field(default_factory=list)
+
+
+# One PowerShell script per session, Word driven by COM: open the file (a file marked as final opens
+# read-only: the mark is lifted for the pass and put back before the save); for each planned table, check
+# it is the one expected (its first cell), map every row to its last cell (Rows.Item is refused in a table
+# with vertically merged cells; Range.Cells is not), find the last row on the table's first page by Word's
+# own layout (Range.Information(3) = wdActiveEndPageNumber, bisected: the rows' pages never decrease), and
+# when the table runs on past its first page, freeze its column widths, split it before the next row with
+# the Split Table command on a cell of that row (Table.Split is refused there too; a vertical merge cut by
+# the split leaves an empty cell at the top of the second part, as the page break showed it), shrink the
+# paragraph Word puts between the parts to 1pt (exact, no spacing) with a page break before it, insert a
+# row above the second part's first row copying the verbatim header cells' content, formatting and shading
+# with the short forms as text, set the heading-row flag off on the first part and on on the second, and
+# give the second part the first's column widths (Word lays a split part out afresh); save when anything
+# changed (the read-only recommendation the fill lifted put back first); report one JSON line; then print
+# the PDF. Repaginate is a courtesy (some files refuse it: "not available because a macro is currently
+# running"; Information paginates by itself). Word sometimes drops the COM link right after the export
+# (RPC_E_DISCONNECTED on Close or Quit), which is not a failed print, so those two are tried, never
+# trusted, and the Word process this started is ended, never one the person has open.
+_WORD_SCRIPT = r"""
+$ErrorActionPreference = 'Stop'
+$job = Get-Content -LiteralPath '%(job)s' -Raw -Encoding UTF8 | ConvertFrom-Json
+$before = @(Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object Id)
+$w = New-Object -ComObject Word.Application; $w.Visible = $false; $w.DisplayAlerts = 0
+$report = @{ tables = @(); pages = $null }
+try {
+  $d = $w.Documents.Open($job.docx, $false, ($job.tables.Count -eq 0))
+  $changed = $false; $shift = 0; $wasFinal = $false
+  if ($job.tables.Count -gt 0) {
+    try { $d.Repaginate() } catch {}
+    try { $wasFinal = [bool]$d.Final } catch {}
+    if ($wasFinal) { $d.Final = $false }
+  }
+  foreach ($s in $job.tables) {
+    $t = $d.Tables.Item($s.index + $shift)
+    $n = $t.Rows.Count
+    $first = ($t.Cell(1, 1).Range.Text -replace '[\s\u00a0\r\a]+', ' ').Trim()
+    $rec = @{ index = $s.index; first = $first; rows = $n; split = $false; error = $null }
+    $rowCell = @{}; $headerCells = 0
+    foreach ($c in $t.Range.Cells) { $rowCell[$c.RowIndex] = $c; if ($c.RowIndex -eq 1) { $headerCells += 1 } }
+    if ($first -ne $s.first) {
+      $rec.error = "Word's table $($s.index) starts '$first', not '$($s.first)'"
+    } elseif ($headerCells -ne $s.short.Count) {
+      $rec.error = "Word's table $($s.index) has $headerCells header cells, not $($s.short.Count)"
+    } else {
+      $page1 = $rowCell[1].Range.Information(3)
+      $lo = 1; $hi = $n
+      while ($lo -lt $hi) {
+        $mid = [int][math]::Ceiling(($lo + $hi) / 2)
+        if ($rowCell[$mid].Range.Information(3) -eq $page1) { $lo = $mid } else { $hi = $mid - 1 }
+      }
+      $rec.page = $page1; $rec.on_first_page = $lo; $rec.last_page = $rowCell[$n].Range.Information(3)
+      if ($lo -gt 1 -and $lo -lt $n) {
+        $tables = $d.Tables.Count
+        $t.AllowAutoFit = $false
+        $rowCell[$lo + 1].Range.Select()
+        $w.Selection.SplitTable()
+        $t = $d.Tables.Item($s.index + $shift); $t2 = $d.Tables.Item($s.index + $shift + 1)
+        $t2.Cell(1, 1).Range.Select()
+        $w.Selection.InsertRowsAbove(1)
+        $cells = $w.Selection.Cells.Count
+        if ($cells -ne $s.short.Count) {
+          # a spanned row where page one ends: the new row cannot carry the header; back to one table
+          $tries = 0
+          while ($d.Tables.Count -ne $tables -and $tries -lt 20) { $null = $d.Undo(); $tries += 1 }
+          $rec.error = "Word's table $($s.index): the row after page one has $cells cells, not $($s.short.Count)"
+          $report.tables += $rec
+          continue
+        }
+        $gap = $d.Range($t.Range.End, $t2.Range.Start)
+        $gap.Font.Size = 1
+        $gap.ParagraphFormat.SpaceBefore = 0; $gap.ParagraphFormat.SpaceAfter = 0
+        $gap.ParagraphFormat.LineSpacingRule = 4; $gap.ParagraphFormat.LineSpacing = 1
+        $gap.ParagraphFormat.PageBreakBefore = -1
+        for ($j = 1; $j -le $s.short.Count; $j++) {
+          $from = $t.Cell(1, $j); $to = $t2.Cell(1, $j)
+          $to.Range.FormattedText = $from.Range.FormattedText
+          $r = $to.Range; $null = $r.MoveEnd(1, -1); $r.Text = [string]$s.short[$j - 1]
+          $to.Range.ParagraphFormat = $from.Range.Paragraphs.Item(1).Format
+          $to.Shading.Texture = $from.Shading.Texture
+          $to.Shading.ForegroundPatternColor = $from.Shading.ForegroundPatternColor
+          $to.Shading.BackgroundPatternColor = $from.Shading.BackgroundPatternColor
+          $to.VerticalAlignment = $from.VerticalAlignment
+        }
+        $t.Cell(1, 1).Range.Rows.HeadingFormat = 0
+        $t2.Cell(1, 1).Range.Rows.HeadingFormat = -1
+        # the second part is laid out afresh by Word: it takes the first part's column widths, column by
+        # column (whole columns carry a vertical merge), cell by cell when Word refuses the columns
+        $t2.AllowAutoFit = $false
+        try { $t2.PreferredWidthType = $t.PreferredWidthType; $t2.PreferredWidth = $t.PreferredWidth } catch {}
+        $widths = @(0) * ($s.short.Count + 1)
+        for ($j = 1; $j -le $s.short.Count; $j++) { $widths[$j] = $t.Cell(1, $j).Width }
+        try {
+          for ($j = 1; $j -le $s.short.Count; $j++) { $t2.Columns.Item($j).Width = $widths[$j] }
+        } catch {
+          foreach ($c in $t2.Range.Cells) {
+            if ($c.ColumnIndex -le $s.short.Count) { $c.Width = $widths[$c.ColumnIndex] }
+          }
+        }
+        $rec.split = $true; $changed = $true; $shift += 1
+      }
+    }
+    $report.tables += $rec
+  }
+  if ($changed) {
+    if ($job.read_only_recommended) { $d.ReadOnlyRecommended = $true }
+    $d.Save()
+    if ($wasFinal) { $d.Final = $true; try { $d.Save() } catch {} }
+    try { $d.Repaginate() } catch {}
+  }
+  try { $report.pages = $d.ComputeStatistics(2) } catch {}
+  Write-Output ('REPORT ' + ($report | ConvertTo-Json -Compress -Depth 4))
+  if ($job.pdf) { $d.ExportAsFixedFormat($job.pdf, %(pdf_format)d) }
+} finally {
+  try { $d.Close(0) } catch {}
+  try { $w.Quit() } catch {}
+  Start-Sleep -Milliseconds 500
+  Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+}
+"""
+
+
+def word_session(docx_path: str, pdf_path: str | None, plan: list[dict[str, Any]] | None = None,
+                 timeout: float = 180, read_only_recommended: bool = False) -> WordSession:
+    """One Word session over ``docx_path`` (COM automation through PowerShell, Windows only): the abridge
+    pass for the tables in ``plan`` (saved into the file when any was split; ``read_only_recommended``
+    puts back the recommendation the fill lifted so Word would open the file for writing), then the print
+    to ``pdf_path`` when given. Every failure is an issue in words, never an exception."""
+    plan = plan or []
+    done = WordSession()
+    if os.name != "nt":
+        done.issues.append("pdf through Word needs Windows with Word installed")
+        if plan:
+            done.issues.append(ABRIDGE_NEEDS_WORD)
+        return done
+    # Word prints to a working name beside the target, which takes the target's place only once the print
+    # is there: a failed print leaves whatever ``pdf_path`` already was (a rendering of the source, say)
+    printing = None
+    if pdf_path:
+        printing = os.path.splitext(os.path.abspath(pdf_path))[0] + ".printing.pdf"
+        if os.path.isfile(printing):
+            os.remove(printing)
+    job = {"docx": os.path.abspath(docx_path), "pdf": printing, "tables": plan,
+           "read_only_recommended": bool(read_only_recommended)}
+    # Word keeps an owner file (~$ + the name less two letters) beside a file it has open for writing and
+    # leaves it behind when it is ended by force after the export; one that was not there before goes
+    folder, name = os.path.split(job["docx"])
+    owner = os.path.join(folder, "~$" + name[2:])
+    owner_before = os.path.exists(owner)
+    fd, job_path = tempfile.mkstemp(prefix="gutenberg-word-", suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(job, f, ensure_ascii=False)
+    script = _WORD_SCRIPT % {"job": _ps(job_path), "pdf_format": WD_EXPORT_PDF}
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    run = None
+    try:
+        run = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                             capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        failure = f"{exc}"
+    finally:
+        try:
+            os.remove(job_path)
+        except OSError:
+            pass
+        if plan and not owner_before and os.path.exists(owner):
+            try:
+                os.remove(owner)
+            except OSError:
+                pass
+    report = None
+    if run is not None:
+        for line in (run.stdout or "").splitlines():
+            if line.startswith("REPORT "):
+                try:
+                    report = json.loads(line[len("REPORT "):])
+                except ValueError:
+                    report = None
+        failure = _first_error(run.stderr) or _first_error(run.stdout) or f"exit {run.returncode}"
+    if report is not None:
+        tables = report.get("tables") or []
+        if isinstance(tables, dict):  # PowerShell's JSON writes a one-element list as the element
+            tables = [tables]
+        for rec in tables:
+            if rec.get("error"):
+                done.issues.append(f"abridged headers: {rec['error']}")
+            elif rec.get("split"):
+                done.abridged.append(rec.get("first") or "")
+        done.pages = report.get("pages")
+    elif plan:
+        done.issues.append(ABRIDGE_NEEDS_WORD)
+    if printing:
+        if os.path.isfile(printing):
+            os.replace(printing, pdf_path)
+            done.printed = True
+        else:
+            done.issues.insert(0, f"pdf through Word failed: {failure}")
+    return done
+
+
 def pdf_with_word(docx_path: str, pdf_path: str, timeout: float = 180) -> str | None:
     """Print ``docx_path`` to ``pdf_path`` with Word (COM automation through PowerShell, Windows only);
     None when it did, else the reason as one line, and ``pdf_path`` as it was (0.7.1)."""
-    if os.name != "nt":
-        return "pdf through Word needs Windows with Word installed"
-    # Word prints to a working name beside the target, which takes the target's place only once the print
-    # is there: a failed print leaves whatever ``pdf_path`` already was (a rendering of the source, say)
-    printing = os.path.splitext(os.path.abspath(pdf_path))[0] + ".printing.pdf"
-    if os.path.isfile(printing):
-        os.remove(printing)
-    # the export is the work; Word sometimes drops the COM link right after it (RPC_E_DISCONNECTED on
-    # Close or Quit), which is not a failed print, so those two are tried, never trusted, and the Word
-    # process this call started (never one the person has open) is ended if Quit did not reach it
-    script = (
-        "$ErrorActionPreference = 'Stop'; "
-        "$before = @(Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object Id); "
-        "$w = New-Object -ComObject Word.Application; $w.Visible = $false; "
-        f"try {{ $d = $w.Documents.Open('{_ps(docx_path)}', $false, $true); "
-        f"$d.ExportAsFixedFormat('{_ps(printing)}', {WD_EXPORT_PDF}) }} "
-        "finally { try { $d.Close(0) } catch {}; try { $w.Quit() } catch {}; Start-Sleep -Milliseconds 500; "
-        "Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id } "
-        "| Stop-Process -Force -ErrorAction SilentlyContinue }"
-    )
-    try:
-        run = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                             capture_output=True, text=True, timeout=timeout)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return f"pdf through Word failed: {exc}"
-    if not os.path.isfile(printing):
-        detail = (run.stderr or run.stdout or "").strip().splitlines()
-        return "pdf through Word failed: " + (detail[0] if detail else f"exit {run.returncode}")
-    os.replace(printing, pdf_path)
-    return None
+    done = word_session(docx_path, pdf_path, None, timeout)
+    return None if done.printed else done.issues[0]
+
+
+def _first_error(text: str | None) -> str | None:
+    """The first line of what PowerShell wrote, out of its CLIXML wrapping when it used one."""
+    text = (text or "").strip()
+    if text.startswith("#< CLIXML"):
+        errors = [html.unescape(m).replace("_x000D__x000A_", "\n").strip()
+                  for m in re.findall(r'<S S="Error">(.*?)</S>', text, re.S)]
+        lines = [ln for e in errors for ln in e.split("\n") if ln.strip()]
+        return lines[0] if lines else None
+    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.startswith("REPORT ")]
+    return lines[0] if lines else None
 
 
 def _ps(path: str) -> str:

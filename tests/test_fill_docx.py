@@ -1,4 +1,5 @@
-"""The in-place fill (0.7.0): the Word original with the source's text written into its own runs."""
+"""The in-place fill (0.7.0): the Word original with the source's text written into its own runs; the
+abridged headers of 0.8.0 (verbatim on a table's first page, short on every later one, a Word pass)."""
 
 from __future__ import annotations
 
@@ -81,6 +82,55 @@ VALUES = {"vehicle": "Wheel Loader", "owner": "Owner One", "program": "Alpha", "
 
 def _texts(cell) -> list[str]:
     return [p.text for p in cell.paragraphs]
+
+
+SHORT = ["PDP", "Lifecycle", "Deliverable", "Release", "Reference", "Author", "Verification", "Gate reviewer",
+         "Duration", "Status"]
+
+
+def _wide_template(path: pathlib.Path) -> pathlib.Path:
+    """A landscape original with one ten-column, 80-row plan table under a wordy, formatted header (bold Arial
+    9pt, a second paragraph in one cell) that runs over several pages."""
+    import docx
+    from docx.enum.section import WD_ORIENT
+    from docx.oxml import OxmlElement
+    from docx.shared import Pt
+
+    d = docx.Document()
+    d.add_paragraph("Wide Plan", style="Title")
+    s = d.sections[0]
+    s.orientation = WD_ORIENT.LANDSCAPE
+    s.page_width, s.page_height = s.page_height, s.page_width
+    heads = ["Phase of the Product Development Process", "Safety Lifecycle Phase", "Safety Deliverables (every one)",
+             "Work Product Release (location, document and version control)", "QMS/PDP/Platform reference",
+             "Author (Designation: Name)", "Verification Independence Reviewer: Name",
+             "Gate Reviewer (Designation: Name)", "Expected Duration/Deadline (to be planned)",
+             "Status (Pending/Ongoing/Blocked/Done)"]
+    t = d.add_table(rows=81, cols=10)
+    t.style = "Table Grid"
+    for c, h in enumerate(heads):
+        run = t.cell(0, c).paragraphs[0].add_run(h)
+        run.bold, run.font.size, run.font.name = True, Pt(9), "Arial"
+    t.cell(0, 3).add_paragraph("Follow the plan.").runs[0].font.size = Pt(8)
+    for r in range(1, 81):
+        for c in range(10):
+            t.cell(r, c).paragraphs[0].add_run("__________" if (r, c) == (1, 8) else f"r{r}c{c}").font.size = Pt(8)
+    t.rows[0]._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
+    d.add_paragraph("After the table.")
+    d.save(str(path))
+    return path
+
+
+def _grid(table) -> list[str]:
+    from docx.oxml.ns import qn
+
+    return [g.get(qn("w:w")) for g in table._tbl.find(qn("w:tblGrid")).findall(qn("w:gridCol"))]
+
+
+def _is_header(table) -> bool:
+    from docx.oxml.ns import qn
+
+    return table.rows[0]._tr.find(".//" + qn("w:tblHeader")) is not None
 
 
 def test_fill_writes_the_values_into_the_original_and_nothing_else(tmp_path):
@@ -253,6 +303,21 @@ def test_the_command_line_fills(tmp_path):
     run = subprocess.run([sys.executable, "-m", "asi_gutenberg", "fill", str(md), str(tmp_path / "x.docx")],
                          capture_output=True, text=True, encoding="utf-8")
     assert run.returncode == 1 and "no value for parameter" in json.loads(run.stdout)["error"]
+    # 0.8.0: --abridge-headers takes a JSON object; without --pdf the pass cannot run and the payload says so
+    (tmp_path / "headings.json").write_text(json.dumps({"Phase": "Ph.", "Deliverable": "Deliv.", "Deadline": "Due"}),
+                                            encoding="utf-8")
+    run = subprocess.run([sys.executable, "-m", "asi_gutenberg", "fill", str(md), str(tmp_path / "out" / "a.docx"),
+                          "--params-file", str(tmp_path / "values.json"), "--abridge-headers",
+                          str(tmp_path / "headings.json")], capture_output=True, text=True, encoding="utf-8")
+    assert run.returncode == 0, run.stderr
+    payload = json.loads(run.stdout)
+    assert payload["abridged"] == [] and payload["pages"] is None
+    assert payload["issues"] == ["abridged headers need Word (pdf=True on Windows with Word installed)"]
+    (tmp_path / "headings.json").write_text(json.dumps({"Phase": "Ph."}), encoding="utf-8")
+    run = subprocess.run([sys.executable, "-m", "asi_gutenberg", "fill", str(md), str(tmp_path / "out" / "b.docx"),
+                          "--params-file", str(tmp_path / "values.json"), "--abridge-headers",
+                          str(tmp_path / "headings.json")], capture_output=True, text=True, encoding="utf-8")
+    assert run.returncode == 1 and "headings without a short form" in json.loads(run.stdout)["error"]
 
 
 @pytest.mark.skipif(not WINWORD.is_file(), reason="Word is not installed here")
@@ -297,3 +362,113 @@ def test_qf_17_fills_whole(tmp_path):
     assert len(want) == len(got)
     for w, g in zip(want, got, strict=True):
         assert w == g
+
+
+def test_abridged_headers_are_checked_and_need_word(tmp_path, monkeypatch):
+    """0.8.0: the mapping is checked before anything is written; a table only partly in it is a typo, not a
+    table to skip; without Word (no ``pdf=True``, or no PowerShell at all) the pass cannot run, the result
+    says so and the file keeps the verbatim header repeating on every page."""
+    import docx
+
+    from asi_gutenberg.fill_docx import ABRIDGE_NEEDS_WORD
+
+    template = _template(tmp_path / "widget.docx")
+    source = _source(template, tmp_path)
+    short = {"Phase": "Ph.", "Deliverable": "Deliv.", "Deadline": "Due"}
+    for bad in ({}, {"Phase": ""}, {"Phase": 1}, {3: "x"}, "Phase=Ph."):
+        with pytest.raises(ValueError, match="abridged_headers"):
+            fill_docx(str(template), source, VALUES, str(tmp_path / "bad.docx"), abridged_headers=bad)
+    with pytest.raises(ValueError, match=r"headings without a short form: table 2 \(Phase\): 'Deadline'"):
+        fill_docx(str(template), source, VALUES, str(tmp_path / "bad.docx"),
+                  abridged_headers={"Phase": "Ph.", "Deliverable": "Deliv."})
+    with pytest.raises(ValueError, match="no table's first row is in the mapping"):
+        fill_docx(str(template), source, VALUES, str(tmp_path / "bad.docx"), abridged_headers={"Nowhere": "x"})
+    assert not (tmp_path / "bad.docx").exists()
+
+    def verbatim_and_repeating(path: str) -> None:
+        out = docx.Document(path)
+        assert len(out.tables) == 2
+        plan = out.tables[1]
+        assert [c.text for c in plan.rows[0].cells] == ["Phase", "Deliverable", "Deadline"] and _is_header(plan)
+
+    result = fill_docx(str(template), source, VALUES, str(tmp_path / "plain.docx"), abridged_headers=short)
+    assert result.issues == [ABRIDGE_NEEDS_WORD] and result.abridged == [] and result.pages is None
+    verbatim_and_repeating(result.docx)
+
+    def no_word(*args, **kwargs):
+        raise OSError("powershell is not here")
+
+    monkeypatch.setattr(subprocess, "run", no_word)
+    result = fill_docx(str(template), source, VALUES, str(tmp_path / "printed.docx"), pdf=True, abridged_headers=short)
+    assert result.pdf is None and result.abridged == [] and result.pages is None
+    assert result.issues == ["pdf through Word failed: powershell is not here", ABRIDGE_NEEDS_WORD]
+    verbatim_and_repeating(result.docx)
+
+
+@pytest.mark.skipif(not WINWORD.is_file(), reason="Word is not installed here")
+def test_word_abridges_the_headers_after_page_one(tmp_path):
+    """0.8.0, with Word: the table is split where its first page ends; the first part keeps the verbatim
+    header, shown once; the second starts with the short forms in the header's own formatting, repeating;
+    same column widths, nothing but an empty paragraph between them; the PDF printed from the split file."""
+    import docx
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    template = _wide_template(tmp_path / "wide.docx")
+    src = from_docx(str(template), str(tmp_path / "figures")).document
+    [table] = [b for b in src.blocks if b.kind == "table"]
+    table.rows[0][8] = "{{ deadline }}"
+    mapping = dict(zip(table.columns, SHORT, strict=True))
+    result = fill_docx(str(template), to_markdown(src), {"deadline": "2027-01-31"}, str(tmp_path / "out" / "wide.docx"),
+                       pdf=True, abridged_headers=mapping)
+    assert result.issues == [] and result.pdf == str(tmp_path / "out" / "wide.pdf") and result.replaced == 1
+    assert result.abridged == [table.columns[0]] and result.pages and result.pages >= 3
+    assert pathlib.Path(result.pdf).stat().st_size > 1000
+    out = docx.Document(result.docx)
+    first, rest = out.tables  # two where there was one, the rows going on where page one ended
+    assert 2 < len(first.rows) < 81 and len(first.rows) + len(rest.rows) == 82
+    assert [c.text for c in first.rows[0].cells] == list(table.columns) and not _is_header(first)
+    assert [c.text for c in rest.rows[0].cells] == SHORT and _is_header(rest)
+    assert rest.cell(1, 0).text == f"r{len(first.rows)}c0" and first.cell(1, 8).text == "2027-01-31"
+    assert _grid(first) == _grid(rest)
+    run = next(r for p in rest.rows[0].cells[0].paragraphs for r in p.runs if r.text)
+    assert (run.bold, run.font.size, run.font.name) == (True, Pt(9), "Arial")
+    body = out.element.body
+    between = list(body)[list(body).index(first._tbl) + 1:list(body).index(rest._tbl)]
+    assert between and all(el.tag == qn("w:p") and not "".join(el.itertext()).strip() for el in between)
+
+
+@pytest.mark.skipif(not WINWORD.is_file() or not (QF17 / "qf-17-safety-plan.md").is_file(),
+                    reason="Word and asi_standards (private, beside this repo) are both needed")
+def test_qf_17_abridges_its_plan_table(tmp_path):
+    """The owner's QF-17 (0.8.0): its ten wordy headings verbatim on the plan table's first page, abridged on
+    every later one; the split carries the first part's widths, the file keeps its read-only recommendation
+    and its final mark, the document is shorter."""
+    import docx
+    from docx.oxml.ns import qn
+
+    from asi_gutenberg import parameters
+
+    source = (QF17 / "qf-17-safety-plan.md").read_text(encoding="utf-8")
+    template = next((QF17 / "source").glob("*.docx"))
+    doc = from_markdown(source)
+    plan_source = next(b for b in doc.blocks if b.kind == "table" and b.columns[0].startswith("PDP Phases"))
+    mapping = dict(zip(plan_source.columns, SHORT, strict=True))  # the headings as the imported source has them
+    values = {n: f"<{n}>" for n in parameters(doc)}
+    values["vehicle_type"] = "Wheel Loader"
+    result = fill_docx(str(template), source, values, str(tmp_path / "qf-17.docx"), pdf=True, abridged_headers=mapping)
+    assert result.issues == [] and result.abridged == ["PDP Phases"] and result.pdf == str(tmp_path / "qf-17.pdf")
+    assert result.pages and result.pages < 19  # 19 with the verbatim header on every page
+    out = docx.Document(result.docx)
+    assert len(out.tables) == 4
+    first, rest = out.tables[2], out.tables[3]
+    assert len(first.rows) + len(rest.rows) == 51 and len(first.rows) >= 2
+    assert [c.text.strip("\xa0 ") for c in first.rows[0].cells][:2] == ["PDP Phases", "Safety\xa0Lifecycle Phase"]
+    assert not _is_header(first) and [c.text for c in rest.rows[0].cells] == SHORT and _is_header(rest)
+    assert _grid(first) == _grid(rest) and first.style.name == rest.style.name == "Grid Table 6 Colorful"
+    wp = out.settings.element.find(qn("w:writeProtection"))
+    assert wp is not None and wp.get(qn("w:recommended")) == "1"
+    import zipfile
+
+    custom = zipfile.ZipFile(result.docx).read("docProps/custom.xml").decode("utf-8")
+    assert '<vt:bool>true</vt:bool>' in custom.split('name="_MarkAsFinal"', 1)[1][:80]

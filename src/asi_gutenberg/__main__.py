@@ -7,6 +7,8 @@ Gutenberg is a library; this is the smallest door for the four things a person d
     python -m asi_gutenberg params ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
     python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --param program=WA485
     python -m asi_gutenberg fill ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out/qf-17.docx --pdf
+    python -m asi_gutenberg fill ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out/qf-17.docx --pdf \
+        --abridge-headers headings.json
 
 Every command prints one JSON object and exits 0, or prints ``{"ok": false, "error": ...}`` and exits 1.
 """
@@ -96,6 +98,9 @@ def main(argv: list[str] | None = None) -> int:
     fll.add_argument("--no-repeat-header", action="store_true",
                      help="do not repeat each table's first row at the top of every page")
     fll.add_argument("--pdf", action="store_true", help="also print the PDF through Word (Windows, Word installed)")
+    fll.add_argument("--abridge-headers", metavar="JSON", default=None,
+                     help="a JSON object of verbatim column heading -> short form: the table shows the verbatim "
+                          "header on its first page and the short forms on every later page (with --pdf)")
 
     args = parser.parse_args(argv)
     try:
@@ -126,11 +131,16 @@ def main(argv: list[str] | None = None) -> int:
             with open(args.md, encoding="utf-8") as f:
                 source = f.read()
             template = args.template or _template_beside(args.md)
+            abridged = None
+            if args.abridge_headers:
+                with open(args.abridge_headers, encoding="utf-8") as f:
+                    abridged = json.load(f)
             filled = fill_docx(template, source, _values(args), args.out_docx, strict=not args.allow_unfilled,
-                               mark=args.mark, repeat_header=not args.no_repeat_header, pdf=args.pdf)
+                               mark=args.mark, repeat_header=not args.no_repeat_header, pdf=args.pdf,
+                               abridged_headers=abridged)
             payload = {"ok": True, "verb": "fill", "template": os.path.abspath(template), "docx": filled.docx,
                        "pdf": filled.pdf, "replaced": filled.replaced, "unfilled": filled.unfilled,
-                       "issues": filled.issues}
+                       "issues": filled.issues, "abridged": filled.abridged, "pages": filled.pages}
         else:
             with open(args.md, encoding="utf-8") as f:
                 doc = from_markdown(f.read())
