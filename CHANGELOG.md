@@ -6,6 +6,38 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-29
+
+The owner, 2026-10-29, on the exported QF-17: "can we make it exactly like the template? I still want all
+the columns to pop up in every page but otherwise we need to match the template exactly." The rendered
+triplet carries Gutenberg's theme by design; the controlled document wants the Word original's own look.
+
+### Added
+- **`fill_docx(template, source, values, out, *, strict, mark, repeat_header, pdf)`** and the **`fill`**
+  command (`fill_docx.py`, `__main__.py`): the Word original written in place with the Markdown source's
+  text, its `{{ name }}` placeholders filled. The body is walked as `from_docx` walks it, so every
+  paragraph, list item, heading and table cell is found again in order as a unit; the source must line up
+  unit for unit (same kinds, same table shapes) or the fill refuses naming the first unit that does not.
+  For a unit whose text differs, the longest common prefix and suffix stay in their runs and only the span
+  between them is rewritten, in new runs after the run where it starts, which lends them its formatting;
+  a span that crosses paragraphs in a cell is written one paragraph per line, the cell's own paragraphs
+  reused and the last cloned. A title inside a content control is written and the file's title property
+  with it. Every table's first row repeats at the top of each page (`repeat_header`, default on); `mark`
+  shades a filled value mint on its own run (default off: the template exactly); `pdf` prints the PDF
+  through Word itself (`pdf_with_word`, PowerShell COM, Windows only; the Word process it starts is ended,
+  one the person has open is never touched; a failure is an issue, not an error). Returns `Filled` (`docx`,
+  `pdf`, `replaced`, `unfilled`, `issues`). Exported from the package.
+- `tests/test_fill_docx.py`: a synthetic original (bold prefix, italic tail, a cell of lines, an empty
+  cell, a landscape section, a footer) filled and read back; marks on the values only; strict and loose
+  unfilled placeholders; nothing to change changes nothing; a source out of line is refused; the command
+  line; the PDF through Word when it is installed; the owner's QF-17 filled whole and read back cell for
+  cell (when asi_standards is checked out beside).
+
+### Changed
+- `__main__`: `--param` / `--params-file` loading shared by `build` and `fill` (`_values`); `fill` finds
+  the one `.docx` under `source/` beside the Markdown when `--template` is not given (the asi_standards
+  layout).
+
 ## [0.6.1] - 2026-10-29
 
 Broken-windows sweep after 0.6.0: no change to the Python API or the generated documents.
@@ -258,7 +290,8 @@ as those two. The Python API is unchanged by the move.
 - `py.typed` marker so host type-checkers see the package as typed.
 - Smoke tests covering the pipeline round trip and the demo catalog.
 
-[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/c00289/asi_gutenberg/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/c00289/asi_gutenberg/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/c00289/asi_gutenberg/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/c00289/asi_gutenberg/compare/v0.4.1...v0.5.0

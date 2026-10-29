@@ -16,6 +16,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _version
 
 from .diagrams import render_diagrams
+from .fill_docx import Filled, fill_docx, pdf_with_word
 from .importer import Imported, from_docx
 from .layout import LayoutOptions, layout
 from .markdown import from_markdown, to_markdown
@@ -50,6 +51,7 @@ except PackageNotFoundError:  # a checkout that is not installed
     __version__ = "0.0.0"
 
 __all__ = ["__version__", "from_docx", "Imported", "parameters", "fill", "unfilled",
+           "fill_docx", "Filled", "pdf_with_word",
            "Document", "Heading", "Paragraph", "ListBlock", "ListItem", "Table", "Code",
            "Callout", "Requirement", "Figure", "DiagramBlock", "Quote", "Rule", "PageBreak", "Toc",
            "Raw", "Revision", "DocMeta", "layout", "LayoutOptions", "to_markdown", "from_markdown",

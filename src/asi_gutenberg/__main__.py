@@ -1,10 +1,12 @@
-"""``python -m asi_gutenberg``: import a Word file, list a source's parameters, build a source with values.
+"""``python -m asi_gutenberg``: import a Word file, list a source's parameters, build a source with values,
+or fill the Word original itself with them.
 
-Gutenberg is a library; this is the smallest door for the three things a person does by hand:
+Gutenberg is a library; this is the smallest door for the four things a person does by hand:
 
     python -m asi_gutenberg import "QF-17 Safety Plan.docx" ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
     python -m asi_gutenberg params ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
     python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --param program=WA485
+    python -m asi_gutenberg fill ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out/qf-17.docx --pdf
 
 Every command prints one JSON object and exits 0, or prints ``{"ok": false, "error": ...}`` and exits 1.
 """
@@ -12,11 +14,13 @@ Every command prints one JSON object and exits 0, or prints ``{"ok": false, "err
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import sys
 from typing import Any
 
+from .fill_docx import fill_docx
 from .importer import from_docx
 from .markdown import from_markdown, to_markdown
 from .params import parameters
@@ -31,6 +35,27 @@ def _parse_params(items: list[str] | None) -> dict[str, str]:
         name, value = item.split("=", 1)
         out[name.strip()] = value
     return out
+
+
+def _values(args) -> dict[str, Any]:
+    """The parameter values of a build or a fill: the files first, a later file or ``--param`` winning."""
+    values: dict[str, Any] = {}
+    for path in args.params_file or ():
+        with open(path, encoding="utf-8") as f:
+            loaded = json.load(f)
+        if not isinstance(loaded, dict):
+            raise ValueError(f"{path}: a parameters file is a JSON object of name: value")
+        values.update({str(k): v for k, v in loaded.items()})
+    values.update(_parse_params(args.param))
+    return values
+
+
+def _template_beside(md: str) -> str:
+    """The one Word original under ``source/`` beside the Markdown source (the asi_standards layout)."""
+    found = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(md)), "source", "*.docx")))
+    if len(found) != 1:
+        raise ValueError(f"--template: {len(found)} .docx under source/ beside {md}; name the Word original")
+    return found[0]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -58,6 +83,20 @@ def main(argv: list[str] | None = None) -> int:
     bld.add_argument("--landscape", action="store_true",
                      help="lay the pages out landscape (a wide table reads better)")
 
+    fll = sub.add_parser("fill", help="fill the Word original in place from a Markdown source: the template exactly")
+    fll.add_argument("md")
+    fll.add_argument("out_docx", help="the Word file to write; --pdf prints a PDF beside it through Word")
+    fll.add_argument("--template", default=None,
+                     help="the Word original (default: the one .docx under source/ beside the Markdown)")
+    fll.add_argument("--param", action="append", metavar="NAME=VALUE", help="a parameter value (repeatable)")
+    fll.add_argument("--params-file", metavar="JSON", action="append",
+                     help="a JSON object of parameter values (repeatable; a later file or --param wins)")
+    fll.add_argument("--allow-unfilled", action="store_true", help="fill even when a placeholder has no value")
+    fll.add_argument("--mark", action="store_true", help="shade the filled values (off: the template exactly)")
+    fll.add_argument("--no-repeat-header", action="store_true",
+                     help="do not repeat each table's first row at the top of every page")
+    fll.add_argument("--pdf", action="store_true", help="also print the PDF through Word (Windows, Word installed)")
+
     args = parser.parse_args(argv)
     try:
         if args.verb == "import":
@@ -83,19 +122,20 @@ def main(argv: list[str] | None = None) -> int:
             with open(args.md, encoding="utf-8") as f:
                 doc = from_markdown(f.read())
             payload = {"ok": True, "verb": "params", "md": args.md, "parameters": parameters(doc)}
+        elif args.verb == "fill":
+            with open(args.md, encoding="utf-8") as f:
+                source = f.read()
+            template = args.template or _template_beside(args.md)
+            filled = fill_docx(template, source, _values(args), args.out_docx, strict=not args.allow_unfilled,
+                               mark=args.mark, repeat_header=not args.no_repeat_header, pdf=args.pdf)
+            payload = {"ok": True, "verb": "fill", "template": os.path.abspath(template), "docx": filled.docx,
+                       "pdf": filled.pdf, "replaced": filled.replaced, "unfilled": filled.unfilled,
+                       "issues": filled.issues}
         else:
             with open(args.md, encoding="utf-8") as f:
                 doc = from_markdown(f.read())
-            values: dict[str, Any] = {}
-            for path in args.params_file or ():
-                with open(path, encoding="utf-8") as f:
-                    loaded = json.load(f)
-                if not isinstance(loaded, dict):
-                    raise ValueError(f"{path}: a parameters file is a JSON object of name: value")
-                values.update({str(k): v for k, v in loaded.items()})
-            values.update(_parse_params(args.param))
             theme = {"orientation": "landscape"} if args.landscape else None
-            result = build(doc, args.out_dir, args.name, theme=theme, params=values,
+            result = build(doc, args.out_dir, args.name, theme=theme, params=_values(args),
                            strict_params=not args.allow_unfilled, mark_params=not args.no_mark)
             payload = {"ok": True, "verb": "build", **{k: result[k] for k in ("md", "pdf", "docx", "pages", "issues")}}
     except (ValueError, OSError) as exc:

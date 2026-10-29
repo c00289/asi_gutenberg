@@ -193,7 +193,24 @@ python -m asi_gutenberg import "QF-17 Safety Plan.docx" ../asi_standards/qf-17-s
 python -m asi_gutenberg params ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
 python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --param program=WA485 --landscape
 python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --params-file values.json --landscape
+python -m asi_gutenberg fill ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out/qf-17-safety-plan.docx --params-file values.json --pdf
 ```
+
+### The template exactly: filling the Word original in place
+
+The build above renders the source with Gutenberg's own theme. When the document must look exactly like
+the controlled template (the owner, 2026-10-29: "match the template exactly"), `fill_docx(template,
+source, values, out)` and the `fill` command write the Word original itself with the source's text put
+into its own runs: every style, header, footer, table, column width and page orientation stays the
+original's, because nothing else is touched. The body is walked as the importer walks it, so each
+paragraph and cell is found again in order; the source must still line up unit for unit, else the fill
+refuses and names the first unit that does not. Only the span that changed inside a paragraph or cell
+is rewritten, in new runs after the run where it starts, so a bold prefix or an italic tail keep their
+formatting; a cell written line by line gets one paragraph per line, the cell's own. Each table's first
+row repeats at the top of every page it spans (`repeat_header`, on by default). `--mark` shades the
+filled values mint as the rendered documents do; without it the file is the template exactly. `--pdf`
+prints the PDF through Word itself (Windows with Word installed; the Word process it starts is ended
+afterwards), so the PDF is Word's own print of the filled file, not a rendering.
 
 The parametrised standards themselves live in **asi_standards**, a private sibling repo, never
 here: one folder per document, the original Word file preserved byte for byte under `source/`
