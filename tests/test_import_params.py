@@ -269,8 +269,8 @@ def test_the_output_stem_ignores_the_marks(tmp_path):
 
 def test_the_command_line_takes_a_params_file(tmp_path):
     source = tmp_path / "doc.md"
-    source.write_text("---\ntitle: \"{{ a }} and {{ b }}\"\nkind: plan\n---\n# {{ a }} and {{ b }}\n\n## Scope\n\nText.\n",
-                      encoding="utf-8")
+    text = "---\ntitle: \"{{ a }} and {{ b }}\"\nkind: plan\n---\n# {{ a }} and {{ b }}\n\n## Scope\n\nText.\n"
+    source.write_text(text, encoding="utf-8")
     values = tmp_path / "values.json"
     values.write_text(json.dumps({"a": "one", "b": "two"}), encoding="utf-8")
     bad = tmp_path / "bad.json"
