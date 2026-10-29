@@ -17,7 +17,7 @@ from the in-memory model, so the three files can never disagree.
 
 | Block kinds | Document kinds |
 |---|---|
-| heading, paragraph, bullet / numbered / task list, table, field table, code, callout (note, tip, important, warning, caution), requirement, figure, diagram (asi_escher), quote, rule, page break, table of contents, raw Markdown | spec, report, plan, procedure, minutes, memo, safety_case, icd, analysis, checklist, release_notes |
+| heading, paragraph, bullet / numbered / task list, table, field table, code, callout (note, tip, important, warning, caution), requirement, figure, diagram (asi_escher), quote, rule, page break, section break (portrait / landscape), table of contents, raw Markdown | spec, report, plan, procedure, minutes, memo, safety_case, icd, analysis, checklist, release_notes |
 
 ## Install
 
@@ -245,10 +245,15 @@ uv run ruff check src tests
 
 The suite is `tests/test_smoke.py` (Markdown round trip, the triplet is
 written, a dangling trace is reported, every demo builds with its diagram
-files in place) and `tests/test_diagrams.py` (the `diagram` block: model
+files in place), `tests/test_diagrams.py` (the `diagram` block: model
 round trip, numbering, rendering, issue capture, portability, import
-isolation). It runs with asi_escher's `LayoutWarning` as an error, so a
-warning that escaped `render_diagrams` would fail it.
+isolation) and `tests/test_import_params.py` (the Word importer, the
+parameters and their marks, the `section` block, the command line, and the
+QF-17 source when asi_standards is checked out beside this repo). It runs
+with asi_escher's `LayoutWarning` as an error, so a warning that escaped
+`render_diagrams` would fail it.
 
-Release: bump `version` in `pyproject.toml`, add a `CHANGELOG.md` entry, tag
-`vX.Y.Z`.
+Release: bump `version` in `pyproject.toml`, add a `CHANGELOG.md` entry with
+its compare link, tag `vX.Y.Z`. `tests/test_version.py` fails until the three
+agree (`asi_gutenberg.__version__` reads the installed metadata, so `uv sync`
+after the bump).

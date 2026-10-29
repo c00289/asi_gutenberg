@@ -106,15 +106,6 @@ def _repeat_header(row):
     trPr.append(el)
 
 
-def _para_shading(paragraph, hexcol: str):
-    pPr = paragraph._p.get_or_add_pPr()
-    shd = OxmlElement("w:shd")
-    shd.set(qn("w:val"), "clear")
-    shd.set(qn("w:color"), "auto")
-    shd.set(qn("w:fill"), hexcol.lstrip("#"))
-    pPr.append(shd)
-
-
 def _para_border_bottom(paragraph, hexcol: str, size: int = 6):
     pPr = paragraph._p.get_or_add_pPr()
     pbdr = OxmlElement("w:pBdr")

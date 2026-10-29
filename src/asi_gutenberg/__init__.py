@@ -12,6 +12,9 @@ asi_escher diagram as plain data and ``build()`` renders it to a PNG beside
 the Markdown.  asi_escher (and matplotlib with it) is imported only when a
 diagram is validated or rendered, never by ``import asi_gutenberg``.
 """
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _version
+
 from .diagrams import render_diagrams
 from .importer import Imported, from_docx
 from .layout import LayoutOptions, layout
@@ -41,7 +44,12 @@ from .pipeline import build
 from .render_docx import render_docx
 from .render_pdf import render_pdf
 
-__all__ = ["from_docx", "Imported", "parameters", "fill", "unfilled",
+try:
+    __version__ = _version("asi_gutenberg")
+except PackageNotFoundError:  # a checkout that is not installed
+    __version__ = "0.0.0"
+
+__all__ = ["__version__", "from_docx", "Imported", "parameters", "fill", "unfilled",
            "Document", "Heading", "Paragraph", "ListBlock", "ListItem", "Table", "Code",
            "Callout", "Requirement", "Figure", "DiagramBlock", "Quote", "Rule", "PageBreak", "Toc",
            "Raw", "Revision", "DocMeta", "layout", "LayoutOptions", "to_markdown", "from_markdown",

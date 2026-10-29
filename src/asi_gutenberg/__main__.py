@@ -2,9 +2,9 @@
 
 Gutenberg is a library; this is the smallest door for the three things a person does by hand:
 
-    python -m asi_gutenberg import "QF-17 Safety Plan.docx" templates/qf-17/qf-17-safety-plan.md
-    python -m asi_gutenberg params templates/qf-17/qf-17-safety-plan.md
-    python -m asi_gutenberg build templates/qf-17/qf-17-safety-plan.md out --param program=WA485 --param owner=...
+    python -m asi_gutenberg import "QF-17 Safety Plan.docx" ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
+    python -m asi_gutenberg params ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
+    python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --param program=WA485
 
 Every command prints one JSON object and exits 0, or prints ``{"ok": false, "error": ...}`` and exits 1.
 """

@@ -6,6 +6,35 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-29
+
+Broken-windows sweep after 0.6.0: no change to the Python API or the generated documents.
+
+### Fixed
+- **`--param` without `=`** on the command line left by `SystemExit`, a bare line on stderr; it is refused
+  as `{"ok": false, "error": ...}` with exit code 1, as the command line promises for every error.
+- `render_docx._para_shading` had no caller since the marks went on runs (0.4.0); gone.
+- README: the block-kinds table names the `section` block (0.6.0); the Tests paragraph names
+  `tests/test_import_params.py`, the third test file since 0.3.0.
+- The command line's docstring pointed its examples at `templates/qf-17/`, a folder that never existed;
+  they point at the asi_standards checkout, as the README does.
+- The CI comment, copied from a sibling, promised GUI tests on Tk; there are none here. It says instead
+  that the QF-17 test skips in CI, where the private asi_standards is not checked out.
+- The QF-17 test's docstring said 48 rows; the assertion, and the table, say 49.
+- `uv.lock` still recorded this project at 0.2.1; refreshed.
+- This changelog's compare links pointed at an `example.invalid` placeholder and stopped at 0.2.1; they
+  point at the GitHub repository, one per tagged version. Versions 0.1.0 and 0.2.0 predate this
+  repository (its history starts at the `v0.2.1` tag) and have no tag here, so their headings are unlinked.
+- `asi_gutenberg.__version__` (the installed metadata) and `tests/test_version.py`, which checks that
+  `pyproject.toml`, the top CHANGELOG entry and `__version__` agree, so a half-done bump fails the suite;
+  the sibling asi_escher 0.1.2 does the same.
+
+### Changed
+- `uv.lock` follows the sibling asi_escher to 0.1.2.
+
+### Tests
+- `test_a_bad_param_is_refused_as_json`, `test_version_is_the_same_everywhere`.
+
 ## [0.6.0] - 2026-10-29
 
 The owner, 2026-10-29: "the report was portrait; we should strive to make the Word product as close
@@ -229,7 +258,12 @@ as those two. The Python API is unchanged by the move.
 - `py.typed` marker so host type-checkers see the package as typed.
 - Smoke tests covering the pipeline round trip and the demo catalog.
 
-[Unreleased]: https://example.invalid/asi-gutenberg/compare/v0.2.1...HEAD
-[0.2.1]: https://example.invalid/asi-gutenberg/compare/v0.2.0...v0.2.1
-[0.2.0]: https://example.invalid/asi-gutenberg/compare/v0.1.0...v0.2.0
-[0.1.0]: https://example.invalid/asi-gutenberg/releases/tag/v0.1.0
+[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/c00289/asi_gutenberg/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/c00289/asi_gutenberg/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/c00289/asi_gutenberg/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/c00289/asi_gutenberg/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/c00289/asi_gutenberg/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/c00289/asi_gutenberg/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/c00289/asi_gutenberg/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/c00289/asi_gutenberg/releases/tag/v0.2.1
