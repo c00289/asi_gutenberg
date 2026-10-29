@@ -189,6 +189,7 @@ params=values)` fills first and reports anything left as `unfilled parameter: <n
 python -m asi_gutenberg import "QF-17 Safety Plan.docx" ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
 python -m asi_gutenberg params ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md
 python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --param program=WA485 --landscape
+python -m asi_gutenberg build ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out --params-file values.json --landscape
 ```
 
 The parametrised standards themselves live in **asi_standards**, a private sibling repo, never

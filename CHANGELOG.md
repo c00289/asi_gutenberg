@@ -6,6 +6,16 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-29
+
+### Added
+- **`--params-file JSON`** on `python -m asi_gutenberg build` (repeatable): a JSON object of parameter
+  values, as a tool writes them (asi_kletz's `plan export` writes the Safety Plan's); a later file or a
+  `--param` wins. A file that is not an object is refused with its path.
+
+### Tests
+- `test_the_command_line_takes_a_params_file`.
+
 ## [0.4.1] - 2026-10-29
 
 ### Fixed

@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import sys
+from typing import Any
 
 from .importer import from_docx
 from .markdown import from_markdown, to_markdown
@@ -50,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     bld.add_argument("out_dir")
     bld.add_argument("--name", default=None, help="the output stem (default: from the title)")
     bld.add_argument("--param", action="append", metavar="NAME=VALUE", help="a parameter value (repeatable)")
+    bld.add_argument("--params-file", metavar="JSON", action="append",
+                     help="a JSON object of parameter values (repeatable; a later file or --param wins)")
     bld.add_argument("--allow-unfilled", action="store_true", help="build even when a placeholder has no value")
     bld.add_argument("--no-mark", action="store_true", help="do not highlight the filled values")
     bld.add_argument("--landscape", action="store_true",
@@ -83,7 +86,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             with open(args.md, encoding="utf-8") as f:
                 doc = from_markdown(f.read())
-            values = _parse_params(args.param)
+            values: dict[str, Any] = {}
+            for path in args.params_file or ():
+                with open(path, encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if not isinstance(loaded, dict):
+                    raise ValueError(f"{path}: a parameters file is a JSON object of name: value")
+                values.update({str(k): v for k, v in loaded.items()})
+            values.update(_parse_params(args.param))
             theme = {"orientation": "landscape"} if args.landscape else None
             result = build(doc, args.out_dir, args.name, theme=theme, params=values,
                            strict_params=not args.allow_unfilled, mark_params=not args.no_mark)

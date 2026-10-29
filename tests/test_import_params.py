@@ -265,3 +265,23 @@ def test_the_output_stem_ignores_the_marks(tmp_path):
     d.h1("Scope")
     out = build(d, str(tmp_path), params={"vehicle_type": "Wheel Loader"})
     assert os.path.basename(out["md"]) == "wheel_loader_safety_plan__sp_.md"
+
+
+def test_the_command_line_takes_a_params_file(tmp_path):
+    source = tmp_path / "doc.md"
+    source.write_text("---\ntitle: \"{{ a }} and {{ b }}\"\nkind: plan\n---\n# {{ a }} and {{ b }}\n\n## Scope\n\nText.\n",
+                      encoding="utf-8")
+    values = tmp_path / "values.json"
+    values.write_text(json.dumps({"a": "one", "b": "two"}), encoding="utf-8")
+    bad = tmp_path / "bad.json"
+    bad.write_text("[1, 2]", encoding="utf-8")
+
+    def run(*args):
+        return subprocess.run([sys.executable, "-m", "asi_gutenberg", *args], capture_output=True, text=True)
+
+    built = run("build", str(source), str(tmp_path / "out"), "--params-file", str(values), "--param", "b=three")
+    assert built.returncode == 0, built.stdout + built.stderr
+    md = pathlib.Path(json.loads(built.stdout)["md"]).read_text(encoding="utf-8")
+    assert "==one== and ==three==" in md  # a --param wins over the file
+    refused = run("build", str(source), str(tmp_path / "out"), "--params-file", str(bad))
+    assert refused.returncode == 1 and "a parameters file is a JSON object" in refused.stdout
