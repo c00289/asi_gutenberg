@@ -37,11 +37,13 @@ from .model import (
     Quote,
     Requirement,
     Rule,
+    Section,
     Table,
     Toc,
 )
 
 PAGEBREAK = "<!-- pagebreak -->"
+_SECTION = re.compile(r"^<!--\s*section:\s*(portrait|landscape)\s*-->$")
 TOC_OPEN = "<!-- toc -->"
 TOC_CLOSE = "<!-- /toc -->"
 
@@ -162,6 +164,8 @@ def _block_markdown(b) -> str:
         return "---"
     if k == "pagebreak":
         return PAGEBREAK
+    if k == "section":
+        return f"<!-- section: {b.orientation} -->"
     if k == "raw":
         return b.text
     if k == "toc":
@@ -264,6 +268,12 @@ def from_markdown(text: str) -> Document:
         if s == PAGEBREAK:
             flush()
             blocks.append(PageBreak())
+            i += 1
+            continue
+        m = _SECTION.match(s)
+        if m:
+            flush()
+            blocks.append(Section(m.group(1)))
             i += 1
             continue
         if _COMMENT.match(s):

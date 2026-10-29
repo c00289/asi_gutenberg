@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 
 from docx import Document as WordDocument
-from docx.enum.section import WD_ORIENT
+from docx.enum.section import WD_ORIENT, WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml import OxmlElement
@@ -478,6 +478,22 @@ class _DocxRenderer:
 
     def _b_pagebreak(self, b):
         self.w.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+    def _b_section(self, b):
+        """A new Word section on a new page, turned to the block's orientation, the margins kept."""
+        th = self.th
+        W, H = page_size_pt(th)
+        if b.orientation == "landscape":
+            W, H = max(W, H), min(W, H)
+        else:
+            W, H = min(W, H), max(W, H)
+        sec = self.w.add_section(WD_SECTION.NEW_PAGE)
+        sec.orientation = WD_ORIENT.LANDSCAPE if W > H else WD_ORIENT.PORTRAIT
+        sec.page_width = Pt(W)
+        sec.page_height = Pt(H)
+        for side in ("left_margin", "right_margin", "top_margin", "bottom_margin"):
+            setattr(sec, side, Inches(th["margin_in"]))
+        self.text_w_in = W / 72.0 - 2 * th["margin_in"]
 
     def _b_toc(self, b):
         th = self.th

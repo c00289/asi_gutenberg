@@ -176,7 +176,10 @@ paragraphs as one list, every table (a two-column table of labels becomes a `Fie
 table), inline pictures as figures written beside the source, the `Document ID` and
 `Document owner` rows of a front table as `doc_id` and `author`, and a footer date stamp when
 it is unambiguous. What it cannot keep it says in `issues` (page orientation per section,
-header and footer text, fonts). The result is a Markdown source that rebuilds to the triplet.
+header and footer text, fonts). A section break that changes the page orientation becomes a
+`section` block (`<!-- section: landscape -->`), so a plan table on landscape pages inside a portrait
+document comes out the same way in the PDF and the Word file. The result is a Markdown source that
+rebuilds to the triplet.
 
 A parameter is `{{ name }}` anywhere text goes: metadata, headings, paragraphs, list items,
 table cells and captions, callouts. A filled value is written as `==value==` and both renderers

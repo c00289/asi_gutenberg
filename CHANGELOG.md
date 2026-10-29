@@ -6,6 +6,26 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-29
+
+The owner, 2026-10-29: "the report was portrait; we should strive to make the Word product as close
+as possible to the original." The QF-17 original is portrait with its plan table on landscape pages.
+
+### Added
+- **The `section` block** (`model.Section`, `Document.section_break(orientation)`): a new page in the
+  other orientation from here on, as a Word section break does; `<!-- section: landscape -->` in the
+  Markdown. The PDF gets a third page template, the turned page with the same margins, and the header,
+  footer and watermark draw to the page in use; a table on a turned page is as wide as that page. The
+  Word file gets a real new section with the orientation and the page size swapped and the margins kept.
+- **The importer reads section breaks**: a paragraph whose properties close a section hands the next
+  section's orientation on as a `section` block when it differs; the "mixes page orientations" issue is
+  gone, there is nothing left to warn about. `--landscape` on the command line still turns a whole
+  document.
+
+### Tests
+- `test_a_section_block_turns_the_page_and_back` (the round trip, the three pages, the PDF's two page
+  sizes, the Word sections' orientations), `test_from_docx_reads_the_section_breaks`.
+
 ## [0.5.0] - 2026-10-29
 
 ### Added

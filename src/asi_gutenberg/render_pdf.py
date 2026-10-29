@@ -194,8 +194,12 @@ class _PdfRenderer:
         cover_frame = Frame(self.margin + 0.45 * inch, self.margin, self.text_w - 0.45 * inch,
                             self.H - 2 * self.margin, id="cover", leftPadding=0, rightPadding=0,
                             topPadding=0, bottomPadding=0)
+        # the other orientation, for a ``section`` block: the same margins on a page turned sideways
+        turned = Frame(self.margin, self.margin, self.H - 2 * self.margin, self.W - 2 * self.margin,
+                       id="turned", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
         templates = [PageTemplate(id="Cover", frames=[cover_frame], onPage=self._on_cover),
-                     PageTemplate(id="Body", frames=[frame], onPage=self._on_body)]
+                     PageTemplate(id="Body", frames=[frame], onPage=self._on_body),
+                     PageTemplate(id="Turned", frames=[turned], onPage=self._on_body, pagesize=(self.H, self.W))]
         template = _DocTemplate(path, pagesize=(self.W, self.H), pageTemplates=templates,
                                 leftMargin=self.margin, rightMargin=self.margin,
                                 topMargin=self.margin, bottomMargin=self.margin,
@@ -249,30 +253,33 @@ class _PdfRenderer:
 
     def _on_body(self, canv, template_doc):
         th, m = self.th, self.doc.meta
+        W, H = canv._pagesize  # the page being drawn: a ``section`` block may have turned it
+        text_w = W - 2 * self.margin
         canv.saveState()
         # header
-        y = self.H - self.margin * 0.6
+        y = H - self.margin * 0.6
         canv.setFont(th["pdf_font"], 7.5)
         canv.setFillColor(colors.HexColor(th["muted"]))
         canv.drawString(self.margin, y, pdf_safe(m.title)[:110])
         right = " · ".join(x for x in (m.doc_id, m.kind_label) if x)
-        canv.drawRightString(self.W - self.margin, y, pdf_safe(right))
+        canv.drawRightString(W - self.margin, y, pdf_safe(right))
         canv.setStrokeColor(colors.HexColor(th["rule"]))
         canv.setLineWidth(0.6)
-        canv.line(self.margin, y - 5, self.W - self.margin, y - 5)
+        canv.line(self.margin, y - 5, W - self.margin, y - 5)
         # footer ("of N" comes from the previous multiBuild pass)
         y = self.margin * 0.55
-        canv.line(self.margin, y + 11, self.W - self.margin, y + 11)
+        canv.line(self.margin, y + 11, W - self.margin, y + 11)
         left = " · ".join(x for x in (m.organisation, m.classification,
                                            f"Rev {m.revision}" if m.revision else "") if x)
         canv.drawString(self.margin, y, pdf_safe(left))
         total = max(self.counter.total, template_doc.page)
-        canv.drawRightString(self.W - self.margin, y, f"Page {template_doc.page} of {total}")
+        canv.drawRightString(W - self.margin, y, f"Page {template_doc.page} of {total}")
+        del text_w
         # watermark
         if m.status == "Draft":
             canv.setFont(th["pdf_font_bold"], 110)
             canv.setFillColor(colors.HexColor(th["watermark"]))
-            canv.translate(self.W / 2, self.H / 2)
+            canv.translate(W / 2, H / 2)
             canv.rotate(45)
             canv.drawCentredString(0, -30, "DRAFT")
         canv.restoreState()
@@ -360,6 +367,14 @@ class _PdfRenderer:
     def _b_pagebreak(self, b):
         return PageBreak()
 
+    def _b_section(self, b):
+        """A new page in the block's orientation: the template whose page size matches it."""
+        wants_landscape = b.orientation == "landscape"
+        is_landscape = self.W > self.H
+        template = "Body" if wants_landscape == is_landscape else "Turned"
+        self._page_turned = template == "Turned"
+        return [NextPageTemplate(template), PageBreak()]
+
     def _b_toc(self, b):
         self._toc_seen = True
         self._toc_depth = b.depth
@@ -429,6 +444,17 @@ class _PdfRenderer:
         else:
             out.append(Spacer(1, 10))
         return out
+
+    @property
+    def text_w(self) -> float:
+        """The text width of the page in use: the turned page's when a ``section`` block turned it."""
+        if getattr(self, "_page_turned", False):
+            return self.H - 2 * self.margin
+        return self._text_w
+
+    @text_w.setter
+    def text_w(self, value: float) -> None:
+        self._text_w = value
 
     def _col_widths(self, b) -> list[float]:
         ncol = len(b.columns)

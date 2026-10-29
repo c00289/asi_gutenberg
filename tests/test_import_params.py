@@ -162,7 +162,11 @@ def test_qf_17_safety_plan_imports_whole(tmp_path):
     assert len(tables) == 3 and tables[0].rows[0][0] == "Document ID"
     plan = tables[2]
     assert plan.columns[:3] == ["PDP Phases", "Safety Lifecycle Phase", "Safety Deliverables"] and len(plan.rows) == 49
-    assert any("mixes page orientations" in i for i in result.issues)
+    sections = [b.orientation for b in doc.blocks if b.kind == "section"]
+    assert sections == ["landscape", "portrait"] and not any("orientation" in i for i in result.issues)
+    kinds = [b.kind for b in doc.blocks]
+    first, last = kinds.index("section"), len(kinds) - 1 - kinds[::-1].index("section")
+    assert "table" in kinds[first:last]  # the plan table sits between the two breaks, on the turned pages
 
 
 def test_a_wide_table_builds_portrait_and_landscape(tmp_path):
@@ -285,3 +289,66 @@ def test_the_command_line_takes_a_params_file(tmp_path):
     assert "==one== and ==three==" in md  # a --param wins over the file
     refused = run("build", str(source), str(tmp_path / "out"), "--params-file", str(bad))
     assert refused.returncode == 1 and "a parameters file is a JSON object" in refused.stdout
+
+
+def test_a_section_block_turns_the_page_and_back(tmp_path):
+    """Owner, 2026-10-29: the original is portrait with its plan table on landscape pages; so is the product."""
+    import docx
+    from docx.enum.section import WD_ORIENT
+
+    from asi_gutenberg.model import Section
+
+    d = Document("Turned", "plan", toc=False, front_matter=False)
+    d.h1("Before")
+    d.p("Portrait text.")
+    d.section_break("landscape")
+    d.table([f"Column {i}" for i in range(8)], [[f"cell {i}" for i in range(8)] for _ in range(3)])
+    d.section_break("portrait")
+    d.h1("After")
+    d.p("Portrait again.")
+    md = to_markdown(d)
+    assert md.count("<!-- section: landscape -->") == 1 and md.count("<!-- section: portrait -->") == 1
+    again = from_markdown(md)
+    assert [b.kind for b in again.blocks] == [
+        "heading", "paragraph", "section", "table", "section", "heading", "paragraph",
+    ]
+    assert again.blocks[2].orientation == "landscape" and again.blocks[4].orientation == "portrait"
+    assert Document.from_dict(d.to_dict()).blocks[2].orientation == "landscape"
+    with pytest.raises(ValueError, match="orientation"):
+        Section("sideways")
+
+    out = build(d, str(tmp_path), "turned")
+    assert out["pages"] >= 3  # the title page, before, the turned table, after
+    pdf = pathlib.Path(out["pdf"]).read_bytes()
+    assert b"/MediaBox [0 0 612 792]" in pdf.replace(b"\n", b"") or b"612 792" in pdf  # portrait pages
+    assert b"792 612" in pdf  # the turned one
+    sections = docx.Document(out["docx"]).sections
+    assert [s.orientation for s in sections] == [WD_ORIENT.PORTRAIT, WD_ORIENT.LANDSCAPE, WD_ORIENT.PORTRAIT]
+    assert sections[1].page_width > sections[1].page_height and sections[2].page_width < sections[2].page_height
+
+
+def test_from_docx_reads_the_section_breaks(tmp_path):
+    import docx
+    from docx.enum.section import WD_ORIENT, WD_SECTION
+
+    d = docx.Document()
+    d.add_paragraph("Purpose", style="Heading 1")
+    d.add_paragraph("Portrait text.")
+    sec = d.add_section(WD_SECTION.NEW_PAGE)
+    sec.orientation = WD_ORIENT.LANDSCAPE
+    sec.page_width, sec.page_height = sec.page_height, sec.page_width
+    d.add_paragraph("Plan", style="Heading 2")
+    t = d.add_table(rows=2, cols=3)
+    t.cell(0, 0).text, t.cell(0, 1).text, t.cell(0, 2).text = "a", "b", "c"
+    t.cell(1, 0).text, t.cell(1, 1).text, t.cell(1, 2).text = "1", "2", "3"
+    sec2 = d.add_section(WD_SECTION.NEW_PAGE)
+    sec2.orientation = WD_ORIENT.PORTRAIT
+    sec2.page_width, sec2.page_height = sec.page_height, sec.page_width
+    d.add_paragraph("Glossary", style="Heading 1")
+    path = tmp_path / "sections.docx"
+    d.save(str(path))
+    result = from_docx(str(path))
+    kinds = [(b.kind, getattr(b, "orientation", None)) for b in result.document.blocks]
+    assert kinds == [("heading", None), ("paragraph", None), ("section", "landscape"), ("heading", None),
+                     ("table", None), ("section", "portrait"), ("heading", None)]
+    assert not any("orientation" in i for i in result.issues)

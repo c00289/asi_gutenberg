@@ -21,9 +21,12 @@ What is read, in body order:
   owner`` row sets ``author``; a footer or body line that is only a date sets ``date`` when it is
   unambiguous (ISO, or a dd / mm / yyyy stamp with a day above 12).
 
-Not read: page orientation per section (Gutenberg lays out one page size), headers and footers
-beyond the date stamp, fonts and colours (the theme has them), comments and tracked changes. Each is
-reported in ``issues`` so nothing is lost silently. python-docx is imported lazily, like reportlab.
+- A section break that changes the page orientation becomes a ``section`` block (0.6.0), so a plan
+  table on landscape pages inside a portrait document comes out the same way.
+
+Not read: headers and footers beyond the date stamp, fonts and colours (the theme has them), comments
+and tracked changes. Each is reported in ``issues`` so nothing is lost silently. python-docx is
+imported lazily, like reportlab.
 """
 
 from __future__ import annotations
@@ -148,6 +151,15 @@ def from_docx(path: str, figures_dir: str | None = None, *, kind: str = "plan",
                 meta["date"] = found
     doc = Document(title or body_title or stem, kind, toc=False, front_matter=False, numbered=False)
 
+    # -- the sections, in order: a paragraph's sectPr closes one; the body's closes the last -------
+    def orientation_of(sect_pr) -> str:
+        pg = sect_pr.find(qn("w:pgSz")) if sect_pr is not None else None
+        return "landscape" if pg is not None and pg.get(qn("w:orient")) == "landscape" else "portrait"
+
+    section_orientations = [orientation_of(s._sectPr) for s in src.sections]
+    section_index = 0
+    current_orientation = section_orientations[0] if section_orientations else "portrait"
+
     # -- second pass: the body in order ----------------------------------------------------
     pending_list: list[str] = []
     pending_ordered = False
@@ -187,6 +199,15 @@ def from_docx(path: str, figures_dir: str | None = None, *, kind: str = "plan",
             if add_pictures(p):
                 flush_list()
                 continue
+            closes_section = child.find("./" + qn("w:pPr") + "/" + qn("w:sectPr")) is not None
+            if closes_section:
+                flush_list()
+                section_index += 1
+                if section_index < len(section_orientations):
+                    following = section_orientations[section_index]
+                    if following != current_orientation:
+                        doc.section_break(following)
+                        current_orientation = following
             if not text:
                 continue
             m = _HEADING.match(style)
@@ -237,10 +258,6 @@ def from_docx(path: str, figures_dir: str | None = None, *, kind: str = "plan",
     doc.meta.author = meta["author"]
     doc.meta.date = meta["date"]
     doc.numbered = numbered_headings > 0 and numbered_headings >= heading_count / 2
-    orientations = {str(s.orientation) for s in src.sections}
-    if len(orientations) > 1:
-        issues.append("the Word file mixes page orientations; Gutenberg lays out one page size, "
-                      "so wide tables are portrait (build with --landscape)")
     for section in src.sections:
         extra = [clean(p.text) for p in list(section.header.paragraphs) + list(section.footer.paragraphs)]
         extra = [t for t in extra if t and not _date_of(t)]

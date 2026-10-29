@@ -49,7 +49,7 @@ KIND_LABELS = {
 # and both renderers.
 BLOCK_KINDS = {
     "heading", "paragraph", "list", "table", "code", "callout", "requirement",
-    "figure", "diagram", "quote", "rule", "pagebreak", "toc", "raw",
+    "figure", "diagram", "quote", "rule", "pagebreak", "toc", "raw", "section",
 }
 
 # Output formats asi_escher can write for a diagram block (mirrors
@@ -218,6 +218,26 @@ class Rule:
 @dataclass
 class PageBreak:
     kind: str = field(default="pagebreak", init=False)
+
+
+ORIENTATIONS = ("portrait", "landscape")
+
+
+@dataclass
+class Section:
+    """A new page in the other orientation from here on (0.6.0): what a Word section break does.
+
+    The owner, 2026-10-29: the Word product must be as close as possible to the original, whose plan
+    table sits on landscape pages inside a portrait document. Both renderers start a new page with
+    the given orientation; the Markdown carries it as ``<!-- section: landscape -->``.
+    """
+
+    orientation: str = "portrait"
+    kind: str = field(default="section", init=False)
+
+    def __post_init__(self) -> None:
+        if self.orientation not in ORIENTATIONS:
+            raise ValueError(f"unknown orientation {self.orientation!r}; expected one of {ORIENTATIONS}")
 
 
 @dataclass
@@ -438,6 +458,10 @@ class Document:
     def page_break(self) -> PageBreak:
         return self.add(PageBreak())
 
+    def section_break(self, orientation: str = "portrait") -> Section:
+        """A new page in ``orientation`` (``portrait`` | ``landscape``) from here on."""
+        return self.add(Section(orientation))
+
     def toc_here(self, depth: int = 3) -> Toc:
         """Place the table of contents explicitly instead of after the front matter."""
         self.toc = False
@@ -633,6 +657,8 @@ def _block_to_dict(b) -> dict:
         return {"kind": k, "depth": b.depth}
     if k == "raw":
         return {"kind": k, "text": b.text}
+    if k == "section":
+        return {"kind": k, "orientation": b.orientation}
     return {"kind": k}
 
 
@@ -674,4 +700,6 @@ def _block_from_dict(d: dict):
         return Toc(d.get("depth", 3))
     if k == "raw":
         return Raw(d["text"])
+    if k == "section":
+        return Section(d.get("orientation", "portrait"))
     raise ValueError(f"unknown block kind {k!r}; expected one of {sorted(BLOCK_KINDS)}")
