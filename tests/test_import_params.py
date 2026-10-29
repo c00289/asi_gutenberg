@@ -147,7 +147,7 @@ def test_the_command_line_imports_lists_and_builds(tmp_path):
 
 @pytest.mark.skipif(not QF17.is_file(), reason="asi_standards (private) is not checked out beside this repo")
 def test_qf_17_safety_plan_imports_whole(tmp_path):
-    """The owner's controlled document (asi_standards/qf-17-safety-plan): every section, the three tables, the 48 rows."""
+    """The owner's controlled document (asi_standards/qf-17-safety-plan): the sections, the tables, the 48 rows."""
     import hashlib
 
     manifest = (QF17.parent / "SHA256SUMS").read_text(encoding="utf-8").split()[0]
