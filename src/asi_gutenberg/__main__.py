@@ -11,8 +11,10 @@ Gutenberg is a library; this is the smallest door for the four things a person d
         --abridge-headers headings.json
 
 ``build`` and ``fill`` take the values as ``--param NAME=VALUE`` (repeatable) and ``--params-file JSON``
-(repeatable; a later file or ``--param`` wins) and ``--allow-unfilled`` to go on without a value; ``build``
-has ``--name``, ``--no-mark`` and ``--landscape``; ``fill`` has ``--template`` (default: the one .docx under
+(repeatable; a later file or ``--param`` wins), ``--allow-unfilled`` to go on without a value, ``--warn NAME``
+(repeatable: that parameter's value is a gap, highlighted pinkish red instead of green) and ``--warn-url URL``
+(repeatable: a link to that url is a placeholder, pinkish red instead of blue; 0.10.0); ``build`` has
+``--name``, ``--no-mark`` and ``--landscape``; ``fill`` has ``--template`` (default: the one .docx under
 ``source/`` beside the Markdown), ``--mark``, ``--no-repeat-header``, ``--pdf`` and ``--abridge-headers JSON``
 (with ``--pdf``). ``fill --help`` says what each does.
 
@@ -66,6 +68,14 @@ def _template_beside(md: str) -> str:
     return found[0]
 
 
+def _attention_flags(sub) -> None:
+    """``--warn NAME`` and ``--warn-url URL`` (0.10.0), the same on ``build`` and ``fill``."""
+    sub.add_argument("--warn", action="append", metavar="NAME", default=[],
+                     help="a parameter whose value is a gap (repeatable): highlighted pinkish red, not green")
+    sub.add_argument("--warn-url", action="append", metavar="URL", default=[],
+                     help="a url that is a placeholder (repeatable): a link to it is pinkish red, not blue")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="asi_gutenberg", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="verb", required=True)
@@ -88,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
                      help="a JSON object of parameter values (repeatable; a later file or --param wins)")
     bld.add_argument("--allow-unfilled", action="store_true", help="build even when a placeholder has no value")
     bld.add_argument("--no-mark", action="store_true", help="do not highlight the filled values")
+    _attention_flags(bld)
     bld.add_argument("--landscape", action="store_true",
                      help="lay the pages out landscape (a wide table reads better)")
 
@@ -101,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
                      help="a JSON object of parameter values (repeatable; a later file or --param wins)")
     fll.add_argument("--allow-unfilled", action="store_true", help="fill even when a placeholder has no value")
     fll.add_argument("--mark", action="store_true", help="shade the filled values (off: the template exactly)")
+    _attention_flags(fll)
     fll.add_argument("--no-repeat-header", action="store_true",
                      help="do not repeat each table's first row at the top of every page")
     fll.add_argument("--pdf", action="store_true", help="also print the PDF through Word (Windows, Word installed)")
@@ -143,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
                     abridged = json.load(f)
             filled = fill_docx(template, source, _values(args), args.out_docx, strict=not args.allow_unfilled,
                                mark=args.mark, repeat_header=not args.no_repeat_header, pdf=args.pdf,
-                               abridged_headers=abridged)
+                               abridged_headers=abridged, warn=args.warn, warn_urls=args.warn_url)
             payload = {"ok": True, "verb": "fill", "template": os.path.abspath(template), "docx": filled.docx,
                        "pdf": filled.pdf, "replaced": filled.replaced, "unfilled": filled.unfilled,
                        "issues": filled.issues, "abridged": filled.abridged, "pages": filled.pages}
@@ -152,7 +164,8 @@ def main(argv: list[str] | None = None) -> int:
                 doc = from_markdown(f.read())
             theme = {"orientation": "landscape"} if args.landscape else None
             result = build(doc, args.out_dir, args.name, theme=theme, params=_values(args),
-                           strict_params=not args.allow_unfilled, mark_params=not args.no_mark)
+                           strict_params=not args.allow_unfilled, mark_params=not args.no_mark,
+                           warn=args.warn, warn_urls=args.warn_url)
             payload = {"ok": True, "verb": "build", **{k: result[k] for k in ("md", "pdf", "docx", "pages", "issues")}}
     except (ValueError, OSError) as exc:
         print(json.dumps({"ok": False, "verb": args.verb, "error": str(exc)}, indent=2))

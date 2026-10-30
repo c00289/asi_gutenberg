@@ -25,6 +25,8 @@ THEME = {
     "code_bg": "#F1F4F8",
     "mark_bg": "#A0D8A0",  # ==mark==: a filled value stands out; a green, not neon, not forest (owner, 2026-10-29)
     "link_bg": "#CFE2F3",  # [text](url): the shading behind a link, a pale blue under the blue text (0.9.0)
+    "warn_bg": "#F4C2C2",  # !!attention!!: a gap (a placeholder link, no ticket); pinkish red under black text (0.10.0)
+    "warn_fg": "#B71C1C",  # the text of a link that is a gap: a dark red instead of the hyperlink blue (0.10.0)
     "code_ink": "#1F2933",
     "quote_bar": "#B8C2CC",
     "watermark": "#E3E8EE",

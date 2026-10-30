@@ -184,7 +184,9 @@ rebuilds to the triplet.
 A parameter is `{{ name }}` anywhere text goes: metadata, headings, paragraphs, list items,
 table cells and captions, callouts. A filled value is written as `==value==` and both renderers
 highlight it (the theme's `mark_bg`, a green), so a replacement is easy to tell from the text around
-it; `--no-mark` switches that off. `parameters(doc)` lists them; `fill(doc, values)` returns a
+it; `--no-mark` switches that off; a value that is a gap, and a link to a placeholder url, are written
+`!!value!!` and `[!!text!!](url)` and highlighted pinkish red instead (`warn` and `warn_urls`, 0.10.0: see
+*Attention* under the next section). `parameters(doc)` lists them; `fill(doc, values)` returns a
 filled copy and refuses, naming them, the ones it has no value for; `build(doc, out,
 params=values)` fills first and reports anything left as `unfilled parameter: <name>`.
 
@@ -218,6 +220,7 @@ page count; the `fill` command prints the same as one JSON object.
 | `--param NAME=VALUE`, `--params-file JSON` | the values, as for `build`; a later file or `--param` wins |
 | `--allow-unfilled` | fill even when a placeholder has no value (it stays, and is listed) |
 | `--mark` | shade every filled value green on its own run, as the rendered documents do; off, the file is the template exactly |
+| `--warn NAME`, `--warn-url URL` | (repeatable) a parameter whose value is a gap, a url that is a placeholder: pinkish red instead of green or blue (0.10.0, below) |
 | `--no-repeat-header` | do not repeat each table's first row at the top of every page it spans (on by default: `repeat_header`) |
 | `--pdf` | also print the PDF beside the Word file through Word itself (Windows with Word installed): Word's own print of the filled file, not a rendering |
 | `--abridge-headers JSON` | verbatim column heading to short form; the table shows the verbatim header on its first page and the short forms on every later page (needs `--pdf`) |
@@ -235,6 +238,26 @@ the cell is the template's exactly, and the url is listed as unfilled. The Word 
 rendering paint a link the same way, blue over the pale blue shading. For the QF-17 every plan row's
 Safety Deliverables cell is `[<name>]({{ row_N_url }})`, the row's first work product URL as asi_kletz
 supplies it (`python -m asi_gutenberg fill ... --mark`).
+
+**Attention: the gaps in pinkish red.** The owner, 2026-10-29, on the same export: "when the link is
+microsoft.com because of default, or blank, highlight in pinkish red instead of blue; and when no Jira
+ticket is attached also highlight as pinkish red." A third mark, `!!text!!` (the attention mark; no
+space just inside the bangs, so `Danger!! Stop!!` is prose, and `\!` escapes one), beside `==text==` and
+the link; the theme paints it `warn_bg` (`#F4C2C2`, a pinkish red light enough for black text) and a link
+that is one in `warn_fg` (`#B71C1C`, a dark red) over `warn_bg` instead of blue over pale blue. Nobody
+writes it by hand: `fill(doc, values, warn=names, warn_urls=urls)`, `build(..., warn=, warn_urls=)`,
+`fill_docx(..., warn=, warn_urls=)` and the `--warn NAME` / `--warn-url URL` flags of `build` and `fill`
+take the names of the parameters whose values are gaps rather than answers (`row_1_jira_key` when it says
+`no ticket attached`, `row_1_status` when it says `status not fetched`) and the urls that mean nowhere yet
+(`https://www.microsoft.com/`, the placeholder): such a value is written `!!value!!` instead of
+`==value==` (an empty one stays unmarked, as before), a link to such a url `[!!text!!](url)`, still a link.
+In the filled Word original a warn value is shaded `warn_bg`, never green; a link to a placeholder is
+still a `w:hyperlink` to it in the Hyperlink style, underlined, but `warn_fg` over `warn_bg`; and a link
+whose url is empty or unfilled, which collapses to its text, has that text shaded `warn_bg` (a
+deliverable that points nowhere yet is seen). Every other filled value stays green and every real link
+blue. Without `--mark` nothing is shaded and every link is blue: the template exactly. The Word rendering
+and the PDF rendering paint the three marks the same way, and the Markdown keeps `!!…!!` so an agent
+reading it sees the gaps.
 
 **Verbatim, then abridged.** A wide plan table carries wordy column headings, and repeating them on every
 page costs a third of each (the owner, 2026-10-29: "it would be amazing if the safety plan table headers
@@ -325,7 +348,7 @@ isolation), `tests/test_import_params.py` (the Word importer, the
 parameters and their marks, the `section` block, the command line, and the
 QF-17 source when asi_standards is checked out beside this repo),
 `tests/test_fill_docx.py` (the in-place fill, the marks, the links, the
-abridged headers, the command line; the Word prints and the abridge pass
+attention marks, the abridged headers, the command line; the Word prints and the abridge pass
 when Word is installed, the QF-17 when asi_standards is beside this repo)
 and `tests/test_version.py`. It runs with asi_escher's `LayoutWarning` as
 an error, so a warning that escaped `render_diagrams` would fail it.

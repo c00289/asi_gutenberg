@@ -15,6 +15,7 @@ never changed in place) and refuses, naming them, the placeholders it has no val
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from .model import Document
@@ -22,6 +23,8 @@ from .model import Document
 PLACEHOLDER = re.compile(r"\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}")
 # a placeholder that is the whole target of an inline link, ``[text]({{ name }})`` (0.9.0)
 LINK_TARGET = re.compile(r"\]\(\s*" + PLACEHOLDER.pattern + r"\s*\)")
+# any inline link once its target is text, ``[text](url)`` (0.10.0: a url in ``warn_urls`` is a gap)
+LINK = re.compile(r"\[(?P<text>[^\]]+)\]\((?P<url>[^)]*)\)")
 
 
 def parameters(doc: Document) -> list[str]:
@@ -32,7 +35,8 @@ def parameters(doc: Document) -> list[str]:
     return sorted(found)
 
 
-def fill(doc: Document, values: dict[str, Any], *, strict: bool = True, mark: bool = True) -> Document:
+def fill(doc: Document, values: dict[str, Any], *, strict: bool = True, mark: bool = True,
+         warn: Iterable[str] = (), warn_urls: Iterable[str] = ()) -> Document:
     """A copy of ``doc`` with every ``{{ name }}`` replaced by ``str(values[name])``.
 
     With ``mark`` (the default) a filled value is written as ``==value==``, the inline highlight both
@@ -41,6 +45,15 @@ def fill(doc: Document, values: dict[str, Any], *, strict: bool = True, mark: bo
     that is the target of an inline link, ``[text]({{ name }})``, is never marked: the value is the URL
     (0.9.0), and the renderers paint the link blue instead.
 
+    ``warn`` names the parameters whose values are gaps rather than answers (0.10.0; the owner: "when no
+    Jira ticket is attached also highlight as pinkish red"): with ``mark`` such a value is written
+    ``!!value!!``, the attention highlight (the theme's ``warn_bg``, a pinkish red) instead of the green;
+    an empty one stays unmarked as any other. ``warn_urls`` names the urls that mean "nowhere yet" (the
+    owner: "when the link is microsoft.com because of default, or blank, highlight in pinkish red
+    instead of blue"): with ``mark`` a link whose url is one of them is written ``[!!text!!](url)``, still
+    a link, painted as attention. A link whose url is empty, or still a placeholder, needs no marking:
+    the renderers and the in-place fill already paint its text as attention.
+
     With ``strict`` (the default) a placeholder without a value is a ``ValueError`` that names every
     missing one, so a build never silently ships a blank; with ``strict=False`` they stay as they are.
     A value that is not a string is written with ``str``; ``None`` is an empty string.
@@ -48,6 +61,8 @@ def fill(doc: Document, values: dict[str, Any], *, strict: bool = True, mark: bo
     missing = sorted(set(parameters(doc)) - set(values))
     if missing and strict:
         raise ValueError("no value for parameter(s): " + ", ".join(missing))
+    attention = set(warn)
+    gap_urls = {u.strip() for u in warn_urls if u and u.strip()}
 
     def value_of(name: str) -> str:
         v = values[name]
@@ -62,8 +77,18 @@ def fill(doc: Document, values: dict[str, Any], *, strict: bool = True, mark: bo
             if name not in values:
                 return m.group(0)
             text = value_of(name)
-            return f"=={text}==" if mark and text else text
-        return PLACEHOLDER.sub(one, LINK_TARGET.sub(target, text))
+            if not (mark and text):
+                return text
+            return f"!!{text}!!" if name in attention else f"=={text}=="
+
+        def gap(m: re.Match[str]) -> str:
+            text, url = m.group("text"), m.group("url").strip()
+            if url not in gap_urls or text.startswith("!!"):
+                return m.group(0)
+            return f"[!!{text}!!]({m.group('url')})"
+
+        out = PLACEHOLDER.sub(one, LINK_TARGET.sub(target, text))
+        return LINK.sub(gap, out) if mark and gap_urls else out
 
     data = _map_texts(doc.to_dict(), sub)
     out = Document.from_dict(data)

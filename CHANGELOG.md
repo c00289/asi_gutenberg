@@ -6,6 +6,49 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-29
+
+The owner, 2026-10-29, on the exported QF-17 Safety Plan: "when the link is microsoft.com because of default,
+or blank, highlight in pinkish red instead of blue; and when no Jira ticket is attached also highlight as
+pinkish red."
+
+### Added
+- **The attention mark** `!!text!!` (`inline.py`): a third inline mark beside `==text==` and the link, for a
+  value that is a gap rather than an answer. The parser reads it (`Span.warn`; no space just inside the bangs,
+  so `Danger!! Stop!!` stays prose; `\!` and `\=` escape), `plain` strips it, the PDF markup
+  (`to_pdf_markup(..., warn_bg=, warn_fg=)`) paints it over `warn_bg` and a link that is one (`[!!text!!](url)`)
+  in `warn_fg` over `warn_bg`; the Word rendering (`render_docx._runs`) shades it `warn_bg` and writes such a
+  link as a hyperlink in `warn_fg` over `warn_bg`. A link whose url is empty or still a placeholder, which was
+  its plain text, is now its text as attention in every output: a deliverable that points nowhere is seen.
+- **`warn_bg`** `#F4C2C2` (a pinkish red light enough for black text) and **`warn_fg`** `#B71C1C` (a dark red
+  for the text of a link that is a gap, instead of the hyperlink blue) in the theme (`theme.py`).
+- **`params.fill(doc, values, *, strict, mark, warn=(), warn_urls=())`**: `warn` names the parameters whose
+  values are written `!!value!!` instead of `==value==` (an empty value stays unmarked, as before); `warn_urls`
+  names the urls that mean "nowhere yet": a link whose url is one of them, filled or literal, is written
+  `[!!text!!](url)`, still a link. `build(..., warn=, warn_urls=)` passes both to the fill, so the Markdown
+  keeps `!!…!!` for the gaps and the rendered outputs follow.
+- **The in-place fill** (`fill_docx(..., warn=, warn_urls=)`): `_segments` reads `!!…!!` as a segment with
+  `warn=True` (a `Segment` is `(text, marked, href, warn)` now) and the text of a link with no url as one;
+  with `mark=True` `_edit_paragraph` shades a warn segment `warn_bg` (never green), writes a link to a
+  placeholder url as a `w:hyperlink` to it in the Hyperlink style but `warn_fg` over `warn_bg` instead of
+  blue over pale blue (`_link_run(run, qn, warn=True)`), and shades the plain text of an empty or unfilled
+  link `warn_bg`; a text that reads the same as the template but gains attention shading is a change, as a
+  link is. With `mark=False` nothing is shaded and every link is blue: the template exactly.
+- The command line: `build` and `fill` take `--warn NAME` and `--warn-url URL`, both repeatable.
+
+### Tests
+- `test_attention_renders_pinkish_red_in_every_output` (the parse of the three marks and the escapes, `plain`,
+  the PDF markup's colours per span, the fill writing `!!value!!` and `[!!text!!](url)` and leaving an empty
+  value and a `mark=False` build alone, the Word rendering's two hyperlink colours and three shadings, `build
+  --warn --warn-url` on the command line), `test_attention_values_and_links_are_pinkish_red` (the in-place
+  fill: a warn value shaded `warn_bg` and never green, a placeholder link still a hyperlink to the placeholder
+  in `warn_fg` over `warn_bg`, a normal link still blue, a normal value still green, the importer reading the
+  plain text back, `mark=False` the template exactly, an empty warn value unmarked),
+  `test_the_command_line_takes_the_attention_flags` (`fill --mark --warn --warn-url`);
+  `test_a_link_whose_url_is_unfilled_is_its_plain_text` asserts the collapsed link's text is shaded `warn_bg`
+  with `mark` and not without; `test_qf_17_fills_whole` fills the QF-17 once more with row 1's key a gap and
+  its url a placeholder (asi_standards beside the repo, else skipped). 69 tests, 66 before.
+
 ## [0.9.2] - 2026-10-29
 
 The house rule: no real person's name enters a public repository. The owner's decision of 2026-10-29,
@@ -456,7 +499,8 @@ as those two. The Python API is unchanged by the move.
 - `py.typed` marker so host type-checkers see the package as typed.
 - Smoke tests covering the pipeline round trip and the demo catalog.
 
-[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/c00289/asi_gutenberg/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/c00289/asi_gutenberg/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/c00289/asi_gutenberg/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/c00289/asi_gutenberg/compare/v0.8.0...v0.9.0

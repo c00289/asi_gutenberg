@@ -288,6 +288,10 @@ class _DocxRenderer:
             if s.br:
                 paragraph.add_run().add_break(WD_BREAK.LINE)
                 continue
+            if s.href and s.warn:  # a link that is a gap (0.10.0): dark red over the attention shading
+                _hyperlink(paragraph, s.href, s.text, th.get("warn_fg", "#B71C1C"), th["docx_font"],
+                           size or th["body_pt"], th.get("warn_bg", "#F4C2C2"))
+                continue
             if s.href:
                 _hyperlink(paragraph, s.href, s.text, th["accent"], th["docx_font"], size or th["body_pt"],
                            th.get("link_bg"))
@@ -311,12 +315,12 @@ class _DocxRenderer:
                 rPr.append(shd)
             elif size:
                 r.font.size = Pt(size)
-            if s.mark and not s.code:
+            if (s.mark or s.warn) and not s.code:  # attention over a mark: the gap is what matters (0.10.0)
                 rPr = r._element.get_or_add_rPr()
                 shd = OxmlElement("w:shd")
                 shd.set(qn("w:val"), "clear")
                 shd.set(qn("w:color"), "auto")
-                shd.set(qn("w:fill"), th["mark_bg"].lstrip("#"))
+                shd.set(qn("w:fill"), (th.get("warn_bg", "#F4C2C2") if s.warn else th["mark_bg"]).lstrip("#"))
                 rPr.append(shd)
             if colour:
                 r.font.color.rgb = _rgb(colour)

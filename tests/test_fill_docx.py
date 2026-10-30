@@ -358,6 +358,15 @@ def test_qf_17_fills_whole(tmp_path):
     assert _links_of(plan.cell(1, 2)) == [("<row_1_url>", "Safety Plan", "Hyperlink", "0563C1", BLUE)]
     assert not any(s.get(qn("w:fill")) == GREEN for s in plan.cell(1, 2)._tc.iter(qn("w:shd")))
     assert len([h for r in range(1, len(plan.rows)) for h in _links_of(plan.cell(r, 2))]) >= 49
+    # 0.10.0: row 1's url a placeholder and its key a gap: pinkish red, the link kept; row 2 untouched
+    gaps = fill_docx(str(template), source, values, str(tmp_path / "qf-17-gaps.docx"), mark=True,
+                     warn=["row_1_jira_key"], warn_urls=["<row_1_url>"])
+    assert gaps.unfilled == []
+    gap_plan = docx.Document(gaps.docx).tables[2]
+    assert _links_of(gap_plan.cell(1, 2)) == [("<row_1_url>", "Safety Plan", "Hyperlink", DARK_RED, PINK)]
+    assert _links_of(gap_plan.cell(2, 2))[0][3:] == ("0563C1", BLUE)
+    status_fills = _fills_of(gap_plan.cell(1, 9))
+    assert ("<row_1_jira_key>", PINK) in status_fills and ("<row_1_status>", GREEN) in status_fills
     # read back, the file says exactly what the filled source says (less its marks and links), cell for cell
     from asi_gutenberg.fill_docx import _plain, _source_units
 
@@ -555,7 +564,9 @@ def test_a_link_in_a_cell_becomes_a_blue_hyperlink(tmp_path):
 
 def test_a_link_whose_url_is_unfilled_is_its_plain_text(tmp_path):
     """A link whose url still holds its ``{{ placeholder }}`` (or is empty) collapses to the text: no
-    hyperlink, no mark, the cell exactly as the template had it; the url is listed as unfilled."""
+    hyperlink, the cell's text as the template had it; the url is listed as unfilled. Since 0.10.0 that
+    text is shaded the attention pinkish red with ``mark`` (the owner: a blank link is a gap to see), and
+    not at all without it."""
     import docx
     from docx.oxml.ns import qn
 
@@ -567,10 +578,10 @@ def test_a_link_whose_url_is_unfilled_is_its_plain_text(tmp_path):
     out = docx.Document(result.docx)
     plan = out.tables[1]
     assert plan.cell(1, 1).text == "Safety Plan" and _links_of(plan.cell(1, 1)) == []
-    assert not any(True for _ in plan.cell(1, 1)._tc.iter(qn("w:shd")))
+    assert _fills_of(plan.cell(1, 1)) == [("Safety Plan", PINK)]  # a gap: pinkish red, no link
     assert _texts(plan.cell(2, 1)) == ["Role A: Ann", "Role B: Ben"] and _links_of(plan.cell(2, 1)) == []
     [ann] = [r for r in plan.cell(2, 1).paragraphs[0].runs if r.text == "Ann"]
-    assert ann._r.find(qn("w:rPr") + "/" + qn("w:shd")).get(qn("w:fill")) == GREEN  # the value is still marked
+    assert ann._r.find(qn("w:rPr") + "/" + qn("w:shd")).get(qn("w:fill")) == PINK  # the link's gap over the mark
     src = from_markdown(source)
     [_control, plan_source] = [b for b in src.blocks if b.kind == "table"]
     plan_source.rows[0][1] = "[Safety Plan]()"
@@ -578,7 +589,92 @@ def test_a_link_whose_url_is_unfilled_is_its_plain_text(tmp_path):
                       mark=True)
     plan = docx.Document(empty.docx).tables[1]
     assert plan.cell(1, 1).text == "Safety Plan" and _links_of(plan.cell(1, 1)) == []
-    assert _links_of(plan.cell(2, 1)) == []
+    assert _fills_of(plan.cell(1, 1)) == [("Safety Plan", PINK)] and _links_of(plan.cell(2, 1)) == []
+    exact = fill_docx(str(template), to_markdown(src), {**values, "row_2_url": ""}, str(tmp_path / "exact.docx"))
+    plan = docx.Document(exact.docx).tables[1]  # without mark: the template exactly, nothing shaded
+    assert plan.cell(1, 1).text == "Safety Plan" and not any(True for _ in plan.cell(1, 1)._tc.iter(qn("w:shd")))
+
+
+# -- attention (0.10.0) --------------------------------------------------------------------------------
+PINK = THEME["warn_bg"].lstrip("#")
+DARK_RED = THEME["warn_fg"].lstrip("#")
+MS = "https://www.microsoft.com/"
+
+
+def _fills_of(cell) -> list[tuple[str, str | None]]:
+    """Every run of a cell with text, outside and inside its hyperlinks: (text, shading fill)."""
+    from docx.oxml.ns import qn
+
+    out = []
+    for r in cell._tc.iter(qn("w:r")):
+        text = "".join(t.text or "" for t in r.findall(qn("w:t")))
+        if not text:
+            continue
+        shd = r.find(qn("w:rPr") + "/" + qn("w:shd"))
+        out.append((text, shd.get(qn("w:fill")) if shd is not None else None))
+    return out
+
+
+def test_attention_values_and_links_are_pinkish_red(tmp_path):
+    """0.10.0, the owner: "when the link is microsoft.com because of default, or blank, highlight in pinkish
+    red instead of blue; and when no Jira ticket is attached also highlight as pinkish red." ``warn`` names
+    the parameters whose values are gaps: shaded ``warn_bg``, never green; ``warn_urls`` the placeholder
+    urls: a link to one is still a hyperlink to it, in the Hyperlink style, but dark red over ``warn_bg``
+    instead of blue; every other link stays blue and every other value green."""
+    import docx
+    from docx.oxml.ns import qn
+
+    template = _template(tmp_path / "widget.docx")
+    source = _linked_source(template, tmp_path)
+    values = {**LINK_VALUES, "status": "no ticket attached"}
+    result = fill_docx(str(template), source, values, str(tmp_path / "attention.docx"), mark=True,
+                       warn=["status"], warn_urls=[MS])
+    assert result.unfilled == [] and result.issues == []
+    plan = docx.Document(result.docx).tables[1]
+    deliverable = plan.cell(1, 1)
+    assert deliverable.text == "Safety Plan"
+    assert _links_of(deliverable) == [(MS, "Safety Plan", "Hyperlink", DARK_RED, PINK)]  # still a link, not blue
+    [h] = list(deliverable._tc.iter(qn("w:hyperlink")))
+    assert h.find(qn("w:r") + "/" + qn("w:rPr") + "/" + qn("w:u")).get(qn("w:val")) == "single"
+    assert _fills_of(plan.cell(1, 2)) == [("no ticket attached", PINK)]  # the gap, never green
+    assert _links_of(plan.cell(2, 1)) == [("https://jama.example.com/items/2554", "Ann", "Hyperlink", "0563C1", BLUE)]
+    [ben] = [r for r in plan.cell(2, 1).paragraphs[1].runs if r.text == "Ben"]
+    assert ben._r.find(qn("w:rPr") + "/" + qn("w:shd")).get(qn("w:fill")) == GREEN  # a value: still green
+    assert not any(s.get(qn("w:fill")) == GREEN for s in deliverable._tc.iter(qn("w:shd")))
+    again = from_docx(result.docx, str(tmp_path / "figures2")).document  # the file reads back plain
+    assert [b for b in again.blocks if b.kind == "table"][1].rows[0][1:] == ["Safety Plan", "no ticket attached"]
+    # without mark the file is the template exactly: the value plain, the placeholder link blue
+    exact = fill_docx(str(template), source, values, str(tmp_path / "exact.docx"), warn=["status"], warn_urls=[MS])
+    plan = docx.Document(exact.docx).tables[1]
+    assert _links_of(plan.cell(1, 1)) == [(MS, "Safety Plan", "Hyperlink", "0563C1", BLUE)]
+    assert _fills_of(plan.cell(1, 2)) == [("no ticket attached", None)]
+    # an empty warn value stays unmarked, as any other
+    blank = fill_docx(str(template), source, {**values, "status": ""}, str(tmp_path / "blank.docx"), mark=True,
+                      warn=["status"])
+    assert _fills_of(docx.Document(blank.docx).tables[1].cell(1, 2)) == []
+
+
+def test_the_command_line_takes_the_attention_flags(tmp_path):
+    """``fill --warn NAME --warn-url URL`` (repeatable), with ``--mark``."""
+    import docx
+
+    (tmp_path / "source").mkdir()
+    template = _template(tmp_path / "source" / "widget.docx")
+    md = tmp_path / "widget.md"
+    md.write_text(_linked_source(template, tmp_path), encoding="utf-8")
+    (tmp_path / "values.json").write_text(json.dumps({**LINK_VALUES, "status": "no ticket attached"}),
+                                          encoding="utf-8")
+    run = subprocess.run([sys.executable, "-m", "asi_gutenberg", "fill", str(md), str(tmp_path / "out" / "w.docx"),
+                          "--params-file", str(tmp_path / "values.json"), "--mark", "--warn", "status",
+                          "--warn", "owner", "--warn-url", MS, "--warn-url", "https://nowhere.example/"],
+                         capture_output=True, text=True, encoding="utf-8")
+    assert run.returncode == 0, run.stderr
+    payload = json.loads(run.stdout)
+    assert payload["ok"] and payload["unfilled"] == []
+    plan = docx.Document(payload["docx"]).tables[1]
+    assert _links_of(plan.cell(1, 1)) == [(MS, "Safety Plan", "Hyperlink", DARK_RED, PINK)]
+    assert _fills_of(plan.cell(1, 2)) == [("no ticket attached", PINK)]
+    assert _links_of(plan.cell(2, 1))[0][4] == BLUE
 
 
 @pytest.mark.skipif(not WINWORD.is_file(), reason="Word is not installed here")

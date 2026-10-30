@@ -3,6 +3,7 @@ back -> render PDF + Word."""
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 
 from .diagrams import render_diagrams
 from .inline import plain
@@ -17,13 +18,15 @@ from .render_pdf import render_pdf
 def build(d: Document, out_dir: str, name: str | None = None,
           opts: LayoutOptions | None = None, theme: dict | None = None,
           figures_dir: str = "figures", diagram_theme: dict | None = None,
-          params: dict | None = None, strict_params: bool = True, mark_params: bool = True) -> dict:
+          params: dict | None = None, strict_params: bool = True, mark_params: bool = True,
+          warn: Iterable[str] = (), warn_urls: Iterable[str] = ()) -> dict:
     """Lay out `d` and write <name>.md/.pdf/.docx into out_dir.
 
     ``params`` fills the document's ``{{ name }}`` placeholders first (:mod:`asi_gutenberg.params`);
     with ``strict_params`` a placeholder without a value refuses the build, otherwise it stays and
     is reported in ``issues`` as ``unfilled parameter: <name>``; with ``mark_params`` every filled value
-    is highlighted (``==value==``).
+    is highlighted (``==value==``), the ones ``warn`` names and a link whose url is in ``warn_urls`` as
+    attention instead (``!!value!!``, ``[!!text!!](url)``; 0.10.0).
 
     ``diagram`` blocks are rendered first, by asi_escher, into
     ``<out_dir>/<figures_dir>/<stem>.png`` (plus any extra formats the block
@@ -39,7 +42,7 @@ def build(d: Document, out_dir: str, name: str | None = None,
     own ``issues``.
     """
     if params is not None:
-        d = fill(d, params, strict=strict_params, mark=mark_params)
+        d = fill(d, params, strict=strict_params, mark=mark_params, warn=warn, warn_urls=warn_urls)
     name = name or "".join(c if c.isalnum() else "_" for c in plain(d.title).lower())  # marks are not a file name
     os.makedirs(out_dir, exist_ok=True)
     opts = opts or LayoutOptions()

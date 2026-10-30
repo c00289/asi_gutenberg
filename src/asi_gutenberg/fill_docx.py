@@ -42,7 +42,17 @@ becomes a ``w:hyperlink`` (an external relationship, the run inside it carrying 
 properties plus the ``Hyperlink`` character style, added to the document when the template lacks it, Word's
 blue, a single underline and the theme's pale blue ``link_bg`` shading); a mark never applies inside a link,
 blue, not green. A link whose url is empty or still holds a ``{{ placeholder }}`` collapses to its plain
-text: no link, no mark, the cell as the template had it.
+text: no link, the cell as the template had it, but shaded as a gap (below).
+
+Attention (0.10.0; the owner, 2026-10-29: "when the link is microsoft.com because of default, or blank,
+highlight in pinkish red instead of blue; and when no Jira ticket is attached also highlight as pinkish
+red"). A third mark, ``!!value!!``, written by :func:`~asi_gutenberg.params.fill` for the parameters
+``warn`` names and for the text of a link whose url is in ``warn_urls`` (``[!!text!!](url)``): with
+``mark=True`` a warn segment is shaded the theme's pinkish red ``warn_bg`` instead of the green, a link
+that is one is still a ``w:hyperlink`` to its url in the Hyperlink style but in the dark red ``warn_fg``
+over ``warn_bg`` instead of blue over pale blue, and a link whose url is empty or unfilled is its plain
+text shaded ``warn_bg``, so a deliverable that points nowhere yet is seen. With ``mark=False`` nothing is
+shaded and a link is blue: the template exactly.
 """
 
 from __future__ import annotations
@@ -51,6 +61,7 @@ import copy
 import os
 import re
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -68,8 +79,9 @@ from .word import (  # noqa: F401  re-exported: asi_kletz imports WordSession an
 )
 
 _MARK = re.compile(r"==(.+?)==")
+_WARN = re.compile(r"!!(\S(?:.*?\S)??)!!")  # !!attention!!, as inline.py reads it (0.10.0)
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)]*)\)")  # an inline link, as inline.py reads it, the url filled or not
-_INLINE = re.compile(r"\[(?P<ltext>[^\]]+)\]\((?P<href>[^)]*)\)|==(?P<mark>.+?)==")
+_INLINE = re.compile(r"\[(?P<ltext>[^\]]+)\]\((?P<href>[^)]*)\)|==(?P<mark>.+?)==|!!(?P<warn>\S(?:.*?\S)??)!!")
 HYPERLINK_COLOUR = "0563C1"  # Word's own Hyperlink blue
 _RT_HYPERLINK = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
 _FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
@@ -105,12 +117,15 @@ class _Unit:
 
 def fill_docx(template: str, source: Document | str, values: dict[str, Any], out_path: str, *,
               strict: bool = False, mark: bool = False, repeat_header: bool = True, pdf: bool = False,
-              abridged_headers: dict[str, str] | None = None) -> Filled:
+              abridged_headers: dict[str, str] | None = None, warn: Iterable[str] = (),
+              warn_urls: Iterable[str] = ()) -> Filled:
     """Write ``out_path``: ``template`` with the text of ``source`` (a Markdown string or the parsed
     :class:`Document`), its ``{{ name }}`` placeholders filled from ``values``.
 
     ``strict`` refuses a placeholder without a value (else it stays, listed in ``unfilled``); ``mark``
-    shades every filled value; ``repeat_header`` makes each table's first row repeat on every page;
+    shades every filled value, the ones ``warn`` names pinkish red instead of green, a link whose url is
+    in ``warn_urls`` dark red over pinkish red instead of blue, a link with no url as pinkish red text
+    (0.10.0); ``repeat_header`` makes each table's first row repeat on every page;
     ``pdf`` prints ``<out_path stem>.pdf`` through Word (an issue, not an error, when Word cannot);
     ``abridged_headers`` maps a table's verbatim column headings (whitespace-normalised) to short forms:
     a table whose first row is wholly in the mapping shows the verbatim header on its first page and the
@@ -122,7 +137,7 @@ def fill_docx(template: str, source: Document | str, values: dict[str, Any], out
 
     mapping = _mapping(abridged_headers)
     doc = from_markdown(source) if isinstance(source, str) else source
-    filled = fill(doc, values, strict=strict, mark=True)
+    filled = fill(doc, values, strict=strict, mark=True, warn=warn, warn_urls=warn_urls)
     left = unfilled(filled)
     want = _source_units(filled)
     with tempfile.TemporaryDirectory() as tmp:
@@ -255,12 +270,12 @@ def _walk(word, qn) -> tuple[_Unit | None, list[_Unit]]:
 
 
 # -- the rewrite -----------------------------------------------------------------------------------
-Segment = tuple[str, bool, str | None]  # (text, marked, href): a run of the rewritten text
+Segment = tuple[str, bool, str | None, bool]  # (text, marked, href, warn): a run of the rewritten text
 
 
 def _plain(marked: str) -> str:
-    """The text without its marks and links: what the Word file reads back."""
-    return _MARK.sub(lambda m: m.group(1), _LINK.sub(lambda m: m.group(1), marked))
+    """The text without its marks, attention marks and links: what the Word file reads back."""
+    return _WARN.sub(lambda m: m.group(1), _MARK.sub(lambda m: m.group(1), _LINK.sub(lambda m: m.group(1), marked)))
 
 
 def _href(url: str) -> str | None:
@@ -271,22 +286,25 @@ def _href(url: str) -> str | None:
 
 
 def _segments(marked: str) -> list[Segment]:
-    """A filled text as ``(text, marked, href)`` pieces in order: a ``==value==`` the marked ones, a
-    ``[text](url)`` the linked ones (never marked, blue not green; one whose url is unfilled is its text)."""
+    """A filled text as ``(text, marked, href, warn)`` pieces in order: a ``==value==`` the marked ones, a
+    ``!!value!!`` the attention ones (0.10.0), a ``[text](url)`` the linked ones (never marked, blue not
+    green; attention inside one stays, a gap over a link; one whose url is unfilled is its text, a gap)."""
     out: list[Segment] = []
     pos = 0
     for m in _INLINE.finditer(marked):
         if m.start() > pos:
-            out.append((marked[pos:m.start()], False, None))
+            out.append((marked[pos:m.start()], False, None, False))
         if m.group("mark") is not None:
-            out.append((m.group("mark"), True, None))
+            out.append((m.group("mark"), True, None, False))
+        elif m.group("warn") is not None:
+            out.append((m.group("warn"), False, None, True))
         else:
             href = _href(m.group("href"))
-            inner = _segments(m.group("ltext"))
-            out.extend((text, marked_, None) if href is None else (text, False, href) for text, marked_, _ in inner)
+            for text, _, _, warn in _segments(m.group("ltext")):
+                out.append((text, False, None, True) if href is None else (text, False, href, warn))
         pos = m.end()
     if pos < len(marked):
-        out.append((marked[pos:], False, None))
+        out.append((marked[pos:], False, None, False))
     return out
 
 
@@ -294,10 +312,10 @@ def _cut(segments: list[Segment], start: int, end: int) -> list[Segment]:
     """The segments between plain-text offsets ``start`` and ``end``."""
     out: list[Segment] = []
     pos = 0
-    for text, marked, href in segments:
+    for text, marked, href, warn in segments:
         lo, hi = max(start, pos), min(end, pos + len(text))
         if hi > lo:
-            out.append((text[lo - pos:hi - pos], marked, href))
+            out.append((text[lo - pos:hi - pos], marked, href, warn))
         pos += len(text)
     return out
 
@@ -328,7 +346,8 @@ def _pieces(p_el, qn) -> list[tuple[Any, str]]:
 def _rewrite(unit: _Unit, new: Any, mark: bool, qn, part=None) -> bool:
     """Bring the unit's text to ``new`` (a marked string; for a table, its rows of cell strings) with the
     least change; True when anything was written. ``part`` is the document part a link's relationship
-    goes into (0.9.0); a text that reads the same but gains a link is a change."""
+    goes into (0.9.0); a text that reads the same but gains a link, or attention shading (0.10.0, with
+    ``mark``), is a change."""
     if unit.cells is not None:
         changed = False
         for cell, text in zip(unit.cells, (c for row in new for c in row), strict=True):
@@ -338,7 +357,7 @@ def _rewrite(unit: _Unit, new: Any, mark: bool, qn, part=None) -> bool:
     old = clean("\n".join("".join(t for _, t in _pieces(p, qn)) for p in unit.paragraphs))
     plain = _plain(new)
     segments = _segments(new)
-    if old == plain and not any(href for _, _, href in segments):
+    if old == plain and not any(href or (warn and mark) for _, _, href, warn in segments):
         return False
     if len(unit.paragraphs) == 1 and "\n" not in plain:
         _edit_paragraph(unit.paragraphs[0], segments, mark, qn, part)
@@ -370,14 +389,15 @@ def _edit_paragraph(p_el, segments: list[Segment], mark: bool, qn, part=None) ->
     """Rewrite one paragraph's text to ``segments``: the common prefix and suffix stay in their runs, the
     span between goes into new runs after the run where it starts, which lends them its formatting. A
     linked segment goes into a ``w:hyperlink`` (0.9.0), so the prefix and suffix never reach into one:
-    text that reads the same but becomes a link is rewritten."""
+    text that reads the same but becomes a link is rewritten; an attention segment (0.10.0), with
+    ``mark``, is its own shaded run the same way."""
     from docx.oxml import OxmlElement
 
     pieces = _pieces(p_el, qn)
     raw = "".join(t for _, t in pieces)
-    new = "".join(t for t, _, _ in segments)
-    linked = [href for _, _, href in segments if href]
-    if raw == new and not linked:
+    new = "".join(t for t, _, _, _ in segments)
+    bounded = [(text, href, warn) for text, _, href, warn in segments if href or (warn and mark)]
+    if raw == new and not bounded:
         return
     a = 0
     while a < min(len(raw), len(new)) and raw[a] == new[a]:
@@ -385,10 +405,10 @@ def _edit_paragraph(p_el, segments: list[Segment], mark: bool, qn, part=None) ->
     b = 0
     while b < min(len(raw), len(new)) - a and raw[-1 - b] == new[-1 - b]:
         b += 1
-    if linked:  # the first link's start and the last link's end bound the prefix and the suffix
+    if bounded:  # the first link's start and the last link's end bound the prefix and the suffix
         offset, first, last = 0, len(new), 0
-        for text, _, href in segments:
-            if href:
+        for text, _, href, warn in segments:
+            if href or (warn and mark):
                 first, last = min(first, offset), max(last, offset + len(text))
             offset += len(text)
         a = min(a, first)
@@ -460,13 +480,15 @@ def _edit_paragraph(p_el, segments: list[Segment], mark: bool, qn, part=None) ->
         before = None
     # the new text, run by run, then the tail
     new_runs = []
-    for text, marked, href in middle:
+    for text, marked, href, warn in middle:
         run = OxmlElement("w:r")
         rpr = source.find(qn("w:rPr"))
         if rpr is not None:
             run.append(copy.deepcopy(rpr))
         if href:
-            _link_run(run, qn)
+            _link_run(run, qn, warn=warn and mark)
+        elif warn and mark:
+            _shade_run(run, qn, THEME["warn_bg"])
         elif marked and mark:
             _shade_run(run, qn)
         for i, line in enumerate(text.split("\n")):
@@ -505,7 +527,9 @@ def _edit_paragraph(p_el, segments: list[Segment], mark: bool, qn, part=None) ->
     _show_content(source, qn)
 
 
-def _shade_run(run, qn) -> None:
+def _shade_run(run, qn, colour: str | None = None) -> None:
+    """Shade the run ``colour`` (default the theme's green ``mark_bg``; the pinkish red ``warn_bg`` for
+    attention, 0.10.0), any shading or highlight it carried gone."""
     from docx.oxml import OxmlElement
 
     rpr = run.find(qn("w:rPr"))
@@ -517,14 +541,16 @@ def _shade_run(run, qn) -> None:
     shd = OxmlElement("w:shd")
     shd.set(qn("w:val"), "clear")
     shd.set(qn("w:color"), "auto")
-    shd.set(qn("w:fill"), THEME["mark_bg"].lstrip("#"))
+    shd.set(qn("w:fill"), (colour or THEME["mark_bg"]).lstrip("#"))
     rpr.append(shd)
 
 
-def _link_run(run, qn) -> None:
+def _link_run(run, qn, warn: bool = False) -> None:
     """The run inside a hyperlink: the ``Hyperlink`` character style, Word's blue, a single underline and
     the theme's pale blue shading; any mark shading, highlight, colour or underline the source run carried
-    goes, so a link is blue, never green (0.9.0). The properties keep the schema's order."""
+    goes, so a link is blue, never green (0.9.0). With ``warn`` (0.10.0: a link to a placeholder) the text
+    is the theme's dark red ``warn_fg`` over the pinkish red ``warn_bg`` instead, still a link. The
+    properties keep the schema's order."""
     from docx.oxml import OxmlElement
 
     rpr = run.find(qn("w:rPr"))
@@ -538,13 +564,13 @@ def _link_run(run, qn) -> None:
     style.set(qn("w:val"), "Hyperlink")
     rpr.insert(0, style)
     colour = rpr.get_or_add_color()
-    colour.set(qn("w:val"), HYPERLINK_COLOUR)
+    colour.set(qn("w:val"), THEME["warn_fg"].lstrip("#") if warn else HYPERLINK_COLOUR)
     u = rpr.get_or_add_u()
     u.set(qn("w:val"), "single")
     shd = OxmlElement("w:shd")
     shd.set(qn("w:val"), "clear")
     shd.set(qn("w:color"), "auto")
-    shd.set(qn("w:fill"), THEME["link_bg"].lstrip("#"))
+    shd.set(qn("w:fill"), THEME["warn_bg" if warn else "link_bg"].lstrip("#"))
     rpr.insert_element_before(shd, "w:fitText", "w:vertAlign", "w:rtl", "w:cs", "w:em", "w:lang",
                               "w:eastAsianLayout", "w:specVanish", "w:oMath")
 

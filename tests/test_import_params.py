@@ -410,3 +410,85 @@ def test_a_link_renders_blue_in_every_output(tmp_path):
     cells = [c.text for t in word.tables for row in t.rows for c in row.cells]
     assert "Safety Plan" in cells and "HARA" in cells  # the unfilled link is its text
     assert out["pages"] >= 1
+
+
+def test_attention_renders_pinkish_red_in_every_output(tmp_path):
+    """0.10.0, the owner: "when the link is microsoft.com because of default, or blank, highlight in pinkish
+    red instead of blue; and when no Jira ticket is attached also highlight as pinkish red." ``!!text!!`` is
+    the third mark: the parser reads it, ``fill(..., warn=names)`` writes it for those parameters,
+    ``fill(..., warn_urls=urls)`` writes a link to one of them as ``[!!text!!](url)``, a link with no url is
+    attention by itself, and the PDF markup and the Word rendering paint attention the theme's ``warn_bg``,
+    a link that is one in ``warn_fg`` over it, never the mark's green nor the link's blue."""
+    import docx
+    from docx.oxml.ns import qn
+
+    from asi_gutenberg.inline import parse, plain, to_pdf_markup
+    from asi_gutenberg.theme import THEME
+
+    ms = "https://www.microsoft.com/"
+    spans = parse("Key: !!no ticket attached!! and ==Done== then [!!Plan!!](https://www.microsoft.com/) or [HARA]()")
+    assert [(s.text, s.warn, s.mark, s.href) for s in spans] == [
+        ("Key: ", False, False, None), ("no ticket attached", True, False, None), (" and ", False, False, None),
+        ("Done", False, True, None), (" then ", False, False, None), ("Plan", True, False, ms),
+        (" or ", False, False, None), ("HARA", True, False, None),
+    ]
+    assert [(s.text, s.warn) for s in parse("Danger!! Stop!! and \\!\\!x\\!\\!")] == [
+        ("Danger!! Stop!! and ", False), ("!", False), ("!", False), ("x", False), ("!", False), ("!", False)]
+    assert plain("!!x!! [!!y!!](u)") == "x y"
+    assert THEME["warn_bg"].lower() not in (THEME["mark_bg"].lower(), THEME["link_bg"].lower(), "#ffff00")
+    markup = to_pdf_markup("!!gap!! [!!Plan!!](https://www.microsoft.com/) [Real](https://x/) [None]()",
+                           mark_bg=THEME["mark_bg"], link_bg=THEME["link_bg"], warn_bg=THEME["warn_bg"],
+                           warn_fg=THEME["warn_fg"])
+    assert markup.count(f'backColor="{THEME["warn_bg"]}"') == 3 and markup.count(f'backColor="{THEME["link_bg"]}"') == 1
+    assert f'<a href="https://www.microsoft.com/" color="{THEME["warn_fg"]}">' in markup
+    assert '<a href="https://x/" color="#2F6DB5">' in markup and THEME["mark_bg"] not in markup
+
+    d = Document("{{ vehicle_type }} Plan", "plan")
+    d.table(["Deliverable", "Key", "Status"],
+            [["[Safety Plan]({{ row_1_url }})", "{{ row_1_jira_key }}", "{{ row_1_status }}"],
+             ["[HARA]({{ row_2_url }})", "{{ row_2_jira_key }}", "{{ row_2_status }}"]])
+    values = {"vehicle_type": "Wheel Loader", "row_1_url": ms, "row_1_jira_key": "no ticket attached",
+              "row_1_status": "", "row_2_url": "https://x/", "row_2_jira_key": "HWL-1", "row_2_status": "Done"}
+    filled = fill(d, values, warn=["row_1_jira_key", "row_1_status"], warn_urls=[ms])
+    assert filled.title == "==Wheel Loader== Plan"
+    assert filled.blocks[0].rows[0] == [f"[!!Safety Plan!!]({ms})", "!!no ticket attached!!", ""]  # empty: unmarked
+    assert filled.blocks[0].rows[1] == ["[HARA](https://x/)", "==HWL-1==", "==Done=="]
+    unmarked = fill(d, values, mark=False, warn=["row_1_jira_key"], warn_urls=[ms])
+    assert unmarked.blocks[0].rows[0] == [f"[Safety Plan]({ms})", "no ticket attached", ""]
+    assert fill(d, {**values, "row_1_url": ""}, warn_urls=[ms]).blocks[0].rows[0][0] == "[Safety Plan]()"
+
+    out = build(d, str(tmp_path), "attention", params=values, warn=["row_1_jira_key"], warn_urls=[ms])
+    md = pathlib.Path(out["md"]).read_text(encoding="utf-8")
+    assert f"| [!!Safety Plan!!]({ms}) | !!no ticket attached!! |" in md and "| ==HWL-1== | ==Done== |" in md
+    word = docx.Document(out["docx"])
+    links = {}
+    for h in word.element.body.iter(qn("w:hyperlink")):
+        rpr = h.find(qn("w:r") + "/" + qn("w:rPr"))
+        links[word.part.rels[h.get(qn("r:id"))].target_ref] = (
+            rpr.find(qn("w:rStyle")).get(qn("w:val")), rpr.find(qn("w:color")).get(qn("w:val")),
+            rpr.find(qn("w:shd")).get(qn("w:fill")))
+    assert links == {ms: ("Hyperlink", THEME["warn_fg"].lstrip("#"), THEME["warn_bg"].lstrip("#")),
+                     "https://x/": ("Hyperlink", THEME["accent"].lstrip("#"), THEME["link_bg"].lstrip("#"))}
+    fills = {}
+    for t in word.tables:
+        for row in t.rows:
+            for c in row.cells:
+                for p in c.paragraphs:
+                    for r in p.runs:
+                        shd = r._element.find(".//" + qn("w:shd"))
+                        if shd is not None:
+                            fills[r.text] = shd.get(qn("w:fill"))
+    assert fills == {"no ticket attached": THEME["warn_bg"].lstrip("#"), "HWL-1": THEME["mark_bg"].lstrip("#"),
+                     "Done": THEME["mark_bg"].lstrip("#"), "Wheel Loader": THEME["mark_bg"].lstrip("#")}
+    assert out["pages"] >= 1 and out["issues"] == []
+    # the command line: --warn and --warn-url, repeatable
+    source = tmp_path / "doc.md"
+    source.write_text("---\ntitle: Gaps\nkind: plan\n---\n# Gaps\n\n## Scope\n\n"
+                      "{{ a }} and {{ b }}; [Plan]({{ u }}) and [Other]({{ v }}).\n", encoding="utf-8")
+    built = subprocess.run([sys.executable, "-m", "asi_gutenberg", "build", str(source), str(tmp_path / "out"),
+                            "--param", "a=gap", "--param", "b=ok", "--param", f"u={ms}", "--param", "v=https://x/",
+                            "--warn", "a", "--warn", "zz", "--warn-url", ms, "--warn-url", "https://nowhere/"],
+                           capture_output=True, text=True)
+    assert built.returncode == 0, built.stdout + built.stderr
+    text = pathlib.Path(json.loads(built.stdout)["md"]).read_text(encoding="utf-8")
+    assert f"!!gap!! and ==ok==; [!!Plan!!]({ms}) and [Other](https://x/)." in text
