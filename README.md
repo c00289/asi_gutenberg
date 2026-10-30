@@ -64,7 +64,7 @@ from asi_gutenberg import Document, build
 d = Document("E-stop Reset Procedure", "procedure",
              doc_id="ASI-FS-PROC-004", revision="0.1", status="Draft",
              date="2026-10-27", author="Roy", project="WA485 Autonomous Wheel Loader",
-             approvers=[("Functional Safety Manager", "Rod Demay")])
+             approvers=[("Functional Safety Manager", "Max Stone")])
 d.revision("0.1", "2026-10-27", "Roy", "Initial draft")
 
 d.h1("Purpose")

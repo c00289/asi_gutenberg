@@ -21,7 +21,7 @@ ORG = "ASI Robots"
 PROJECT = "WA485 Autonomous Wheel Loader"
 DATE = "2026-10-27"
 AUTHOR = "Roy (Capgemini, FuSa)"
-APPROVERS = [("Functional Safety Manager", "Rod Demay"), ("Safety Mentor", "Darsh Patel"),
+APPROVERS = [("Functional Safety Manager", "Max Stone"), ("Safety Mentor", "Ida Moss"),
              ("Autonomy Lead", "TBD")]
 
 
@@ -481,7 +481,7 @@ def minutes_safety_review() -> Document:
     d.revision("1.0", DATE, "Roy", "Issued")
     d.h1("Attendance")
     d.table(["Name", "Role", "Present"],
-            [["Rod Demay", "FuSa Manager (chair)", "yes"], ["Darsh Patel", "Safety Mentor", "yes"],
+            [["Max Stone", "FuSa Manager (chair)", "yes"], ["Ida Moss", "Safety Mentor", "yes"],
              ["Roy", "FuSa Engineer (minutes)", "yes"], ["Autonomy Lead", "Autonomy", "yes"],
              ["Hydraulics Lead", "Hydraulics", "apologies"]])
     d.h1("Agenda")
@@ -499,9 +499,9 @@ def minutes_safety_review() -> Document:
         "witnessed by the safety mentor.")
     d.h1("Actions")
     d.table(["#", "Action", "Owner", "Due", "Status"],
-            [["A-44-1", "Approve HARA v0.4", "Rod Demay", "2026-10-31", "open"],
+            [["A-44-1", "Approve HARA v0.4", "Max Stone", "2026-10-31", "open"],
              ["A-44-2", "Dual pressure sensor proposal (CR-119)", "Hydraulics Lead", "2026-11-05", "open"],
-             ["A-44-3", "Witness stopping distance report", "Darsh Patel", "2026-10-30", "open"],
+             ["A-44-3", "Witness stopping distance report", "Ida Moss", "2026-10-30", "open"],
              ["A-43-2", "Publish ICD 1.0", "Roy", "2026-10-27", "done"]],
             caption="Action register")
     d.h1("Next meeting")
