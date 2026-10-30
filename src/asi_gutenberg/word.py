@@ -52,14 +52,47 @@ class WordSession:
 # running"; Information paginates by itself). Word sometimes drops the COM link right after the export
 # (RPC_E_DISCONNECTED on Close or Quit), which is not a failed print, so those two are tried, never
 # trusted, and the Word process this started is ended, never one the person has open.
+#
+# Two sessions in a row (0.9.1): a Word that the last session quit can still be shutting down when the next
+# one starts, and while it is, its class factory is still registered, so the next activation lands on it
+# and dies with it (New-Object: 0x80080005 "server execution failed"; Documents.Open: 0x800706BE "the
+# remote procedure call failed", 0x800706BA "the RPC server is unavailable"). So a session waits for the
+# Word it started to be gone before it ends (a graceful exit after Quit, then by force, then the wait
+# again), and its own activation and open, which change nothing, are tried three times, two seconds apart,
+# on those errors alone, the Word of a failed try ended first.
 _WORD_SCRIPT = r"""
 $ErrorActionPreference = 'Stop'
 $job = Get-Content -LiteralPath '%(job)s' -Raw -Encoding UTF8 | ConvertFrom-Json
 $before = @(Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object Id)
-$w = New-Object -ComObject Word.Application; $w.Visible = $false; $w.DisplayAlerts = 0
+$rpc = @(-2146959355, -2147023170, -2147023174, -2147417848, -2147418111, -2147417846)
+function Mine { @(Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id }) }
+function End-Mine {
+  $mine = Mine
+  if ($mine.Count -gt 0) {
+    $mine | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+    $mine | Where-Object { -not $_.HasExited } | Stop-Process -Force -ErrorAction SilentlyContinue
+    $mine | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+  }
+}
+$w = $null; $d = $null; $tries = 0
 $report = @{ tables = @(); pages = $null }
 try {
-  $d = $w.Documents.Open($job.docx, $false, ($job.tables.Count -eq 0))
+  while ($true) {
+    try {
+      $w = New-Object -ComObject Word.Application; $w.Visible = $false; $w.DisplayAlerts = 0
+      $d = $w.Documents.Open($job.docx, $false, ($job.tables.Count -eq 0))
+      break
+    } catch {
+      $tries += 1
+      $codes = @($_.Exception.HResult)
+      if ($_.Exception.InnerException) { $codes += $_.Exception.InnerException.HResult }
+      if ($tries -ge 3 -or -not ($codes | Where-Object { $rpc -contains $_ })) { throw }
+      try { if ($w) { $w.Quit() } } catch {}
+      $w = $null; $d = $null
+      End-Mine
+      Start-Sleep -Seconds 2
+    }
+  }
   $changed = $false; $shift = 0; $wasFinal = $false
   if ($job.tables.Count -gt 0) {
     try { $d.Repaginate() } catch {}
@@ -149,9 +182,7 @@ try {
 } finally {
   try { $d.Close(0) } catch {}
   try { $w.Quit() } catch {}
-  Start-Sleep -Milliseconds 500
-  Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id } |
-    Stop-Process -Force -ErrorAction SilentlyContinue
+  End-Mine
 }
 """
 

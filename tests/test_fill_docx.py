@@ -588,3 +588,26 @@ def test_word_prints_a_linked_cell(tmp_path):
                        str(tmp_path / "linked.docx"), mark=True, pdf=True)
     assert result.issues == [] and result.pdf == str(tmp_path / "linked.pdf")
     assert pathlib.Path(result.pdf).stat().st_size > 1000
+
+
+def _winword_pids() -> set[int]:
+    """The WINWORD.EXE processes running now, by id."""
+    out = subprocess.run(["tasklist", "/fi", "imagename eq WINWORD.EXE", "/fo", "csv", "/nh"],
+                         capture_output=True, text=True).stdout
+    return {int(row.split('","')[1]) for row in out.splitlines() if row.startswith('"WINWORD')}
+
+
+@pytest.mark.skipif(not WINWORD.is_file(), reason="Word is not installed here")
+def test_two_consecutive_word_prints_both_succeed(tmp_path):
+    """0.9.1: a Word the last session quit could still be shutting down when the next one started, its class
+    factory still registered, so the next activation landed on it and died with it (one Word test in three
+    failed with an RPC error). A session now waits for the Word it started to be gone before it ends, so two
+    prints in a row both succeed and no Word of ours is running between them."""
+    template = _template(tmp_path / "widget.docx")
+    source = _source(template, tmp_path)
+    before = _winword_pids()
+    for name in ("first", "second"):
+        result = fill_docx(str(template), source, VALUES, str(tmp_path / f"{name}.docx"), pdf=True)
+        assert result.issues == [] and result.pdf == str(tmp_path / f"{name}.pdf"), name
+        assert pathlib.Path(result.pdf).stat().st_size > 1000
+        assert _winword_pids() <= before, f"{name}: the Word the session started is still running"
