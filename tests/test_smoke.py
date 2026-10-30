@@ -67,3 +67,16 @@ def test_demo_builds(name, builder, tmp_path):
         assert f"]({block.path})" in md
         assert entry["issues"] == []
     assert result["issues"] == []
+
+
+def test_a_table_row_taller_than_the_page_continues_on_the_next_page(tmp_path):
+    """0.10.1: the owner's "plan failed" dialog: a ten-column plan table on a landscape page whose rows had
+    grown taller than the page (people and reviewers wrapping in narrow columns) made reportlab refuse the
+    build with a LayoutError. A tall row now splits across pages; the header row repeats on every page."""
+    d = Document("Tall rows", "report", doc_id="T-2", date="2026-10-30", author="tests")
+    d.h1("Plan")
+    d.section_break("landscape")
+    words = " ".join(f"word{i}" for i in range(220))
+    d.table([f"Column {i}" for i in range(10)], [[words] * 10 for _ in range(3)], caption="A tall table")
+    res = build(d, str(tmp_path), name="tall")
+    assert res["pages"] >= 3 and os.path.getsize(res["pdf"]) > 1000

@@ -6,6 +6,18 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-30
+
+The owner, 2026-10-30, a dialog titled "plan failed" from asi_kletz's Safety Plan export: `LayoutError:
+Flowable <Table 4 rows x 10 cols> ... too large on page 20 in frame 'turned'`. The plan table's rows had
+grown taller than a landscape page once the people and the reviewers of every row were filled in and
+wrapped in ten narrow columns, and reportlab refuses a table whose row cannot be placed whole.
+
+### Fixed
+- **A table row taller than what is left of the page continues on the next page** (`render_pdf._b_table`:
+  `Table(..., splitInRow=1)`, reportlab 4.1+; 5.1 here) instead of refusing the whole build; the header row
+  still repeats on every page. Test: `test_a_table_row_taller_than_the_page_continues_on_the_next_page`.
+
 ## [0.10.0] - 2026-10-29
 
 The owner, 2026-10-29, on the exported QF-17 Safety Plan: "when the link is microsoft.com because of default,
@@ -499,7 +511,8 @@ as those two. The Python API is unchanged by the move.
 - `py.typed` marker so host type-checkers see the package as typed.
 - Smoke tests covering the pipeline round trip and the demo catalog.
 
-[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/c00289/asi_gutenberg/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/c00289/asi_gutenberg/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/c00289/asi_gutenberg/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/c00289/asi_gutenberg/compare/v0.9.0...v0.9.1

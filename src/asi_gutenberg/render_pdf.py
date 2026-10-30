@@ -431,7 +431,11 @@ class _PdfRenderer:
                 for row in data:
                     row[ci].style = ParagraphStyle("al", parent=row[ci].style,
                                                    alignment={"center": 1, "right": 2}[a])
-        t = Table(data, colWidths=widths, repeatRows=1)
+        # 0.10.1: a row taller than what is left of the page continues on the next page (reportlab's
+        # splitInRow, 4.1+) instead of refusing the whole build with a LayoutError, which a ten-column plan
+        # table on a landscape page did once its people and reviewers wrapped in narrow columns; the header
+        # row still repeats on every page
+        t = Table(data, colWidths=widths, repeatRows=1, splitInRow=1)
         t.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(th["accent"])),
             ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor(th["accent_dark"])),
