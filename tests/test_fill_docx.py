@@ -265,7 +265,7 @@ def test_a_failed_print_leaves_the_pdf_that_was_there(tmp_path, monkeypatch):
     def no_word(*args, **kwargs):
         raise OSError("powershell is not here")
 
-    monkeypatch.setattr(subprocess, "run", no_word)  # what fill_docx.py calls, by module attribute
+    monkeypatch.setattr(subprocess, "run", no_word)  # what word.py calls, by module attribute
     result = fill_docx(str(template), _source(template, tmp_path), VALUES, str(tmp_path / "printed.docx"), pdf=True)
     assert result.pdf is None and result.issues == ["pdf through Word failed: powershell is not here"]
     assert rendered.read_bytes() == b"%PDF-1.4 the rendering of the source"
