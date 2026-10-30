@@ -183,7 +183,7 @@ rebuilds to the triplet.
 
 A parameter is `{{ name }}` anywhere text goes: metadata, headings, paragraphs, list items,
 table cells and captions, callouts. A filled value is written as `==value==` and both renderers
-highlight it (the theme's `mark_bg`, a mint), so a replacement is easy to tell from the text around
+highlight it (the theme's `mark_bg`, a green), so a replacement is easy to tell from the text around
 it; `--no-mark` switches that off. `parameters(doc)` lists them; `fill(doc, values)` returns a
 filled copy and refuses, naming them, the ones it has no value for; `build(doc, out,
 params=values)` fills first and reports anything left as `unfilled parameter: <name>`.
@@ -207,11 +207,20 @@ original's, because nothing else is touched. The body is walked as the importer 
 paragraph and cell is found again in order; the source must still line up unit for unit, else the fill
 refuses and names the first unit that does not. Only the span that changed inside a paragraph or cell
 is rewritten, in new runs after the run where it starts, so a bold prefix or an italic tail keep their
-formatting; a cell written line by line gets one paragraph per line, the cell's own. Each table's first
-row repeats at the top of every page it spans (`repeat_header`, on by default). `--mark` shades the
-filled values mint as the rendered documents do; without it the file is the template exactly. `--pdf`
-prints the PDF through Word itself (Windows with Word installed; the Word process it starts is ended
-afterwards), so the PDF is Word's own print of the filled file, not a rendering.
+formatting; a cell written line by line gets one paragraph per line, the cell's own. The result is
+`Filled`: the Word file, the PDF when Word printed one, how many units changed, the placeholders left
+unfilled, the `issues` in words, and (when Word ran) the tables split for abridged headers and Word's
+page count; the `fill` command prints the same as one JSON object.
+
+| `fill` flag | What it does |
+|---|---|
+| `--template DOCX` | the Word original (default: the one `.docx` under `source/` beside the Markdown, the asi_standards layout) |
+| `--param NAME=VALUE`, `--params-file JSON` | the values, as for `build`; a later file or `--param` wins |
+| `--allow-unfilled` | fill even when a placeholder has no value (it stays, and is listed) |
+| `--mark` | shade every filled value green on its own run, as the rendered documents do; off, the file is the template exactly |
+| `--no-repeat-header` | do not repeat each table's first row at the top of every page it spans (on by default: `repeat_header`) |
+| `--pdf` | also print the PDF beside the Word file through Word itself (Windows with Word installed): Word's own print of the filled file, not a rendering |
+| `--abridge-headers JSON` | verbatim column heading to short form; the table shows the verbatim header on its first page and the short forms on every later page (needs `--pdf`) |
 
 **A link in a cell.** The owner, 2026-10-29: "could we turn the name of the safety deliverable into a
 clickable URL and highlight it blue instead of green so it pops?" The source writes an inline link the
@@ -238,16 +247,27 @@ short forms at the top of every later page. A table only partly in the mapping i
 headings without a short form (a typo, not a table to skip); so is a mapping no table's first row is in.
 Word cannot repeat a different header on the later pages of one table, and the row where page one ends is
 known only once Word has laid the document out, so this is a Word pass in the same session that prints
-the PDF (`--pdf`, Windows with Word): Word reports the page of every row, the table is split after the
-last row of its first page, the first part keeps the verbatim header with its repeat turned off, the
-second gets a new first row with the short forms in the verbatim header's own formatting and the repeat
-turned on, both parts keep the same column widths with nothing but a 1pt empty paragraph between them,
-and the Word file is saved with the split before the PDF is printed from it. A table that ends on its
-first page is left alone. The result's `abridged` lists the tables split (by their first heading) and
-`pages` is Word's page count; without Word, or without `--pdf`, the file keeps the verbatim header
-repeating and `issues` says "abridged headers need Word". For the QF-17 the mapping is its ten headings
-(`PDP Phases` to `PDP`, `Safety Lifecycle Phase` to `Lifecycle`, and so on); the plan table's first page
-keeps the verbatim header and the document goes from 19 pages to 15.
+the PDF: Word reports the page of every row, the table is split after the last row of its first page, the
+first part keeps the verbatim header with its repeat turned off, the second gets a new first row with the
+short forms in the verbatim header's own formatting and the repeat turned on, both parts keep the same
+column widths with nothing but a 1pt empty paragraph between them, and the Word file is saved with the
+split before the PDF is printed from it. A table that ends on its first page is left alone. The result's
+`abridged` lists the tables split (by their first heading) and `pages` is Word's page count; without
+Word, or without `--pdf`, the file keeps the verbatim header repeating and `issues` says "abridged
+headers need Word". For the QF-17 the mapping is its ten headings (`PDP Phases` to `PDP`, `Safety
+Lifecycle Phase` to `Lifecycle`, and so on); the plan table's first page keeps the verbatim header and
+the document goes from 19 pages to 15.
+
+**The Word session.** Everything Word itself does, the abridge pass and the print, is one session per
+call (`word_session` in `word.py`, exported with `WordSession` and the plain `pdf_with_word`): a
+PowerShell script drives Word over COM, opens the filled file, splits the planned tables, saves, reports
+one JSON line and exports the PDF to a working name beside the target, which takes the target's place
+only once the print is there, so a failed print leaves whatever PDF was there (asi_kletz writes
+Gutenberg's rendering first and keeps it when Word cannot print). The Word process the session starts is
+ended, and gone, before the session returns; one the person has open is never touched. Since 0.9.1 the
+session's activation and open are retried on the RPC errors a Word still shutting down from the last
+session causes, so two prints in a row both succeed. Every failure is an issue in words on the result,
+never an exception: a machine without Word (or not Windows) gets its Word file and the reason.
 
 The parametrised standards themselves live in **asi_standards**, a private sibling repo, never
 here: one folder per document, the original Word file preserved byte for byte under `source/`
@@ -301,11 +321,14 @@ The suite is `tests/test_smoke.py` (Markdown round trip, the triplet is
 written, a dangling trace is reported, every demo builds with its diagram
 files in place), `tests/test_diagrams.py` (the `diagram` block: model
 round trip, numbering, rendering, issue capture, portability, import
-isolation) and `tests/test_import_params.py` (the Word importer, the
+isolation), `tests/test_import_params.py` (the Word importer, the
 parameters and their marks, the `section` block, the command line, and the
-QF-17 source when asi_standards is checked out beside this repo). It runs
-with asi_escher's `LayoutWarning` as an error, so a warning that escaped
-`render_diagrams` would fail it.
+QF-17 source when asi_standards is checked out beside this repo),
+`tests/test_fill_docx.py` (the in-place fill, the marks, the links, the
+abridged headers, the command line; the Word prints and the abridge pass
+when Word is installed, the QF-17 when asi_standards is beside this repo)
+and `tests/test_version.py`. It runs with asi_escher's `LayoutWarning` as
+an error, so a warning that escaped `render_diagrams` would fail it.
 
 Release: bump `version` in `pyproject.toml`, add a `CHANGELOG.md` entry with
 its compare link, tag `vX.Y.Z`. `tests/test_version.py` fails until the three

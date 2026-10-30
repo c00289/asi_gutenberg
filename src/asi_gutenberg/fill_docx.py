@@ -19,7 +19,7 @@ differs from the filled source, the longest common prefix and suffix stay and on
 rewritten, in new runs after the run where it starts, which lends them its formatting, so a bold ``Note:``
 before a change or the run after it keep their own. A cell written line by line (as the role columns were)
 gets one paragraph per line, the cell's own paragraphs reused and the last cloned for extra lines, so the
-cell keeps its paragraph formatting too. With ``mark=True`` a filled value gets the theme's mint shading on
+cell keeps its paragraph formatting too. With ``mark=True`` a filled value gets the theme's green shading on
 its own run, as the rendered documents paint it.
 
 Abridged headers (0.8.0; the owner, 2026-10-29, on the QF-17 plan table, ten wordy columns over eighteen

@@ -10,6 +10,12 @@ Gutenberg is a library; this is the smallest door for the four things a person d
     python -m asi_gutenberg fill ../asi_standards/qf-17-safety-plan/qf-17-safety-plan.md out/qf-17.docx --pdf \
         --abridge-headers headings.json
 
+``build`` and ``fill`` take the values as ``--param NAME=VALUE`` (repeatable) and ``--params-file JSON``
+(repeatable; a later file or ``--param`` wins) and ``--allow-unfilled`` to go on without a value; ``build``
+has ``--name``, ``--no-mark`` and ``--landscape``; ``fill`` has ``--template`` (default: the one .docx under
+``source/`` beside the Markdown), ``--mark``, ``--no-repeat-header``, ``--pdf`` and ``--abridge-headers JSON``
+(with ``--pdf``). ``fill --help`` says what each does.
+
 Every command prints one JSON object and exits 0, or prints ``{"ok": false, "error": ...}`` and exits 1.
 """
 

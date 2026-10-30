@@ -6,6 +6,46 @@ All notable changes to asi_gutenberg are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-29
+
+Broken-windows sweep after the day's six releases: no change to the Python API or the filled documents.
+
+### Fixed
+- **One Word test in three failed with an RPC error** (`word.py`, was `fill_docx.py`): a Word that the last
+  session quit could still be shutting down when the next session started, and while it was, its class
+  factory was still registered with COM, so the next `New-Object -ComObject Word.Application` was handed
+  to it and died with it (`0x80080005` "server execution failed" at the activation, `0x800706BE` "the
+  remote procedure call failed" or `0x800706BA` "the RPC server is unavailable" at `Documents.Open`). The
+  session's `finally` quit Word, slept half a second and force-stopped what was left without waiting for
+  it to go. It now waits for the Word it started to be gone before the session ends (a graceful exit after
+  `Quit`, then by force, then the wait again), and its own activation and open, which change nothing, are
+  tried three times, two seconds apart, on those errors alone, the Word of a failed try ended first. Three
+  full runs before the fix lost one Word test each (`test_word_prints_a_linked_cell`,
+  `test_word_prints_the_pdf`, `test_qf_17_abridges_its_plan_table`); after it, none.
+- README: the mark is a green since 0.7.2, not a mint, in both places that said so; the `fill_docx`
+  docstring too. The Tests paragraph names `tests/test_fill_docx.py` and `tests/test_version.py`.
+- The CI comment said the QF-17 test skips there; the QF-17 tests and the Word tests skip there (the
+  runner has no Word).
+- This changelog's `[Unreleased]` link compared from 0.8.0.
+
+### Changed
+- **`word.py`**: the Word session (`WordSession`, the PowerShell script, `word_session`, `pdf_with_word`,
+  the CLIXML unwrapping) moved out of `fill_docx.py`, which keeps the fill, the segments, the links and the
+  abridge plan. Every name stays importable from `asi_gutenberg.fill_docx` (asi_kletz imports
+  `WordSession` there and patches `word_session` there) and the package exports `word_session` and
+  `WordSession` beside `pdf_with_word`. `pdf_with_word` has no caller in the family since 0.8.0 but stays:
+  it is exported and promised.
+- README: "The template exactly" is one section again, an introduction, a table of the `fill` flags
+  (`--template`, `--param`, `--params-file`, `--allow-unfilled`, `--mark`, `--no-repeat-header`, `--pdf`,
+  `--abridge-headers`), then the links, the abridged headers and the Word session; every fact of the four
+  increments kept. The command line's docstring lists the flags of `build` and `fill`.
+
+- `uv.lock` takes asi_escher 0.2.2 (the sibling moved on; nothing here uses what changed).
+
+### Tests
+- `test_two_consecutive_word_prints_both_succeed` (Word: two prints in a row, both printed, no Word of
+  ours running after either). 66 tests, 65 before.
+
 ## [0.9.0] - 2026-10-29
 
 The owner, 2026-10-29, on the exported QF-17 Safety Plan: "Could we turn the name of the safety deliverable
@@ -404,7 +444,8 @@ as those two. The Python API is unchanged by the move.
 - `py.typed` marker so host type-checkers see the package as typed.
 - Smoke tests covering the pipeline round trip and the demo catalog.
 
-[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/c00289/asi_gutenberg/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/c00289/asi_gutenberg/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/c00289/asi_gutenberg/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/c00289/asi_gutenberg/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/c00289/asi_gutenberg/compare/v0.7.1...v0.7.2
